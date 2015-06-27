@@ -96,14 +96,14 @@ ancor conn = forever $ do
             (Right t) <- R.get k
             return (k, fromJust t)) ks
 
-    (newsSent, oldTop10) <- S.get
-    newTop10 <- liftIO $ HN.getTopStories
+    (newsSent, oldTop) <- S.get
+    newTop <- liftIO $ HN.getTopStories
 
-    mapM_ (f newTop10 oldTop10 newsSent) users
+    mapM_ (f newTop oldTop newsSent) users
 
     liftIO $ threadDelay $ 60 * 1000 * 1000
   where
-    f newTop10 oldTop10 newsSent (uid, t) = do
+    f newTop oldTop newsSent (uid, t) = do
         let userId = read $ C.unpack uid
         let threshold = read $ C.unpack t
 
@@ -111,14 +111,13 @@ ancor conn = forever $ do
             then newsSent M.! userId
             else []
 
-        let diff = ((take threshold newTop10)\\ (take threshold oldTop10)) \\ sent
+        let diff = ((take threshold newTop) \\ (take threshold oldTop)) \\ sent
 
-        liftIO $ print diff
         let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
         stories <- liftIO $ mapConcurrently HN.getStory diff
 
         mapM_ (liftIO . send userId) stories
-        S.put (updatedNewsSent, newTop10)
+        S.put (updatedNewsSent, newTop)
 
     send _ (HN.Story 0 _ _) =
         return ()
