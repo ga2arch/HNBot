@@ -66,7 +66,7 @@ handleMessage (User suserId) text = do
               Nothing -> return ()
 
 server conn = do
-    scotty 8000 $ do
+    scotty 8080 $ do
         post "/" $ do
             update <- jsonData :: ActionM Update
             liftIO $ do
