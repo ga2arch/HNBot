@@ -55,7 +55,9 @@ handleMessage (User suserId) text = do
     case (head chunks) of
         "/start"  -> saveUser userId >> return ()
         "/stop" -> removeUser userId >> return ()
-        "/threshold" -> (changeThreshold userId $ chunks !! 1) >> return ()
+        "/threshold" -> if length chunks == 2
+            then (changeThreshold userId $ chunks !! 1) >> return ()
+            else return ()
         _ -> return ()
   where
       saveUser userId = R.set userId "10"
