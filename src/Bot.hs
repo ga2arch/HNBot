@@ -75,6 +75,7 @@ server conn = do
             liftIO $ do
                 let (Update _ message) = update
                 case message of
+                    Just (Message _ _ Nothing) -> return ()
                     Just (Message _ user (Just text)) ->
                         R.runRedis conn (handleMessage user text)
                         >> return ()
