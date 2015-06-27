@@ -56,6 +56,7 @@ handleMessage (User suserId) text = do
         "/start"  -> saveUser userId >> return ()
         "/stop" -> removeUser userId >> return ()
         "/threshold" -> (changeThreshold userId $ chunks !! 1) >> return ()
+        _ -> return ()
   where
       saveUser userId = R.set userId "10"
       removeUser userId = R.del [userId]
