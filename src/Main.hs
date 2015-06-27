@@ -12,5 +12,5 @@ import qualified HackerNews as HN
 main = do
     conn <- R.connect R.defaultConnectInfo
     top10 <- HN.getTopStories
-    async $ S.runStateT (ancor conn) (M.empty,top10)
+    async $ S.runStateT (ancor conn) (M.empty,[] )
     server conn

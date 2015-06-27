@@ -46,7 +46,7 @@ makeReq url = do
         withResponse req m $ \resp -> do
             body <- brConsume $ responseBody resp
             case (eitherDecode $ BSL.fromChunks body) of
-                Left err -> print err >> return def
+                Left err -> print url >> return def
                 Right d  -> return d
 
 getStory :: Int -> IO Story

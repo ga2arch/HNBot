@@ -47,8 +47,8 @@ instance ToJSON   Update
 
 type NewsSent = M.Map Int [Int]
 
-handleMessge :: User -> String -> R.Redis ()
-handleMessge (User suserId) text = do
+handleMessage :: User -> String -> R.Redis ()
+handleMessage (User suserId) text = do
     let userId = C.pack . show $ suserId
 
     let chunks = splitOn " " text :: [String]
@@ -73,13 +73,14 @@ server conn = do
                 let (Update _ message) = update
                 case message of
                     Just (Message _ user (Just text)) ->
-                        R.runRedis conn (handleMessge user text)
+                        R.runRedis conn (handleMessage user text)
                         >> return ()
                     Nothing -> return ()
             html "ok"
 
 sendMessage (User userId) text = do
-    let token = ""
+    -- FIXME (reading everytime is horrible)
+    token <- fmap (head . splitOn "\n") $ readFile "token"
     let baseUrl = "https://api.telegram.org/bot"
     let url = mconcat [baseUrl, token, "/sendMessage",
                        "?chat_id=", (show userId), "&text=", text]
@@ -112,6 +113,7 @@ ancor conn = forever $ do
 
         let diff = ((take threshold newTop10)\\ (take threshold oldTop10)) \\ sent
 
+        liftIO $ print diff
         let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
         stories <- liftIO $ mapConcurrently HN.getStory diff
 
@@ -121,6 +123,8 @@ ancor conn = forever $ do
     send _ (HN.Story 0 _ _) =
         return ()
 
-    send userId (HN.Story _ title url) =
-        sendMessage (User userId) (title <> " - " <> url)
-        >> return ()
+    send userId (HN.Story sid title url) = do
+        let hnUrl = "https://news.ycombinator.com/item?id="
+        sendMessage (User userId) $
+            mconcat [title, " - ", url, " - ", hnUrl, (show sid)]
+        return ()
