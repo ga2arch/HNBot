@@ -51,11 +51,12 @@ instance ToJSON   Update
 
 type NewsSent = M.Map Int [Int]
 
-data BotConfig = BotConfig {
+data BotData = BotData {
     redisConn :: R.Connection
 ,   botPort   :: Int
 ,   botToken  :: String
 ,   botState  :: MVar BotState
+,   botChan   :: MVar Message
 }
 
 data BotState = BotState {
@@ -63,53 +64,80 @@ data BotState = BotState {
 ,   botTop      :: [Int]
 } deriving (Show)
 
-newtype Bot a = Bot { unBot :: Re.ReaderT BotConfig IO a }
+newtype Bot a = Bot { unBot :: Re.ReaderT BotData IO a }
     deriving (Monad, Applicative, Functor,
-              Re.MonadIO, Re.MonadReader BotConfig)
+              Re.MonadIO, Re.MonadReader BotData)
 
 runBot config f = Re.runReaderT (unBot f) config
 
-handleMessage :: User -> String -> R.Redis ()
-handleMessage u@(User suserId) text = do
-    let userId = C.pack . show $ suserId
+handler :: Bot ()
+handler = do
+    chan <- fmap botChan Re.ask
+    conn <- fmap redisConn Re.ask
 
-    let chunks = splitOn " " text :: [String]
-    case (head chunks) of
-        "/start"  -> saveUser userId >> return ()
-        "/stop" -> removeUser userId >> return ()
-        "/threshold" -> if length chunks == 2
-            then (changeThreshold userId $ chunks !! 1) >> return ()
-            else return ()
-        "/help" -> (liftIO $ sendMessage u $ "/start\n/stop\n/threshold <num>")
-            >> return ()
-        _ -> return ()
+    liftIO . async . forever $ do
+        Message _ (User uid) content <- takeMVar chan
+
+        case content of
+            Just text -> handleText conn uid text
+            Nothing   -> return ()
+
+    return ()
   where
-      saveUser userId = R.set userId "10"
-      removeUser userId = R.del [userId]
-      changeThreshold userId value = do
-          (Right u) <- R.get userId
-          case u of
-              Just _ -> R.set userId (C.pack value) >> return ()
-              Nothing -> return ()
+    handleText conn uid ('/':cmd) = do
+        let chunks = splitOn " " cmd
+        case (head chunks) of
+            "start"     -> addUser conn uid
+            "stop"      -> delUser conn uid
+            "help"      -> helpCmd uid
+            "threshold" -> changeThreshold conn uid chunks
+            _           -> return ()
+
+    handleText _ _ _ = return ()
+
+    addUser conn uid = do
+        R.runRedis conn $ R.set (C.pack $ show uid) "10"
+        return ()
+
+    delUser conn uid = do
+        R.runRedis conn $ R.del [C.pack $ show uid]
+        return ()
+
+    helpCmd uid = do
+        let hm = mconcat [ "/start - Start receving news", "\n",
+                           "/stop  - Stop receiving news", "\n",
+                           "/threshold num - Set news threshold"]
+        sendMessage uid hm
+
+    changeThreshold conn uid chunks = do
+        if length chunks > 1
+            then do
+                let t = chunks !! 1
+                R.runRedis conn $ do
+                    (Right u) <- R.get (C.pack $ show uid)
+                    case u of
+                        Just _ -> R.set (C.pack $ show uid) (C.pack t) >> return ()
+                        Nothing -> return ()
+            else
+                return ()
 
 server :: Bot ()
 server = do
     conn <- fmap redisConn Re.ask
+    port <- fmap botPort   Re.ask
+    chan <- fmap botChan   Re.ask
 
-    liftIO $ scotty 8080 $ do
+    liftIO . scotty port $ do
         post "/" $ do
             update <- jsonData :: ActionM Update
             liftIO $ do
                 let (Update _ message) = update
                 case message of
-                    Just (Message _ _ Nothing) -> return ()
-                    Just (Message _ user (Just text)) ->
-                        R.runRedis conn (handleMessage user text)
-                        >> return ()
-                    Nothing -> return ()
+                    Just m@(Message _ user (Just text)) -> putMVar chan m
+                    _ -> return ()
             html "ok"
 
-sendMessage (User userId) text = do
+sendMessage userId text = do
     -- FIXME (reading everytime is horrible)
     token <- fmap (head . splitOn "\n") $ readFile "token"
     let baseUrl = "https://api.telegram.org/bot"
@@ -118,28 +146,31 @@ sendMessage (User userId) text = do
 
     req <- parseUrl url
     withManager tlsManagerSettings $ httpNoBody req
+    return ()
 
 ancor :: Bot ()
 ancor = do
     bot <- Re.ask
 
-    _ <- liftIO . async . forever . liftIO $ do
-        users <- R.runRedis (redisConn bot) $ do
-            (Right ks) <- R.keys "*"
-            mapM (\k -> do
-                (Right t) <- R.get k
-                return (k, fromJust t)) ks
+    liftIO . async . forever $ do
+        users <- getUsers $ redisConn bot
 
         oldTop <- fmap botTop (readMVar $ botState bot)
         newTop <- HN.getTopStories
 
-        mapM_ (f newTop oldTop bot) users
+        mapM_ (process newTop oldTop bot) users
 
         threadDelay $ 60 * 1000 * 1000
 
     return ()
   where
-    f newTop oldTop bot (uid, t) = do
+    getUsers conn = R.runRedis conn $ do
+        (Right ks) <- R.keys "*"
+        mapM (\k -> do
+            (Right t) <- R.get k
+            return (k, fromJust t)) ks
+
+    process newTop oldTop bot (uid, t) = do
         newsSent <- fmap botNewsSent (readMVar $ botState bot)
 
         let userId = read $ C.unpack uid
