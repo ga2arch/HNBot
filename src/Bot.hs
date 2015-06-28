@@ -82,7 +82,6 @@ handler = do
     state <- fmap botState    Re.ask
     m     <- fmap botManager  Re.ask
 
-
     liftIO . async . forever $ do
         Message _ (User uid) content <- readChan chan
 
@@ -118,7 +117,9 @@ handler = do
         let hm = mconcat [ "/start - Start receving news", "\n",
                            "/stop  - Stop receiving news", "\n",
                            "/threshold num - Set news threshold", "\n",
-                           "/top5 - Sends you the top10"]
+                           "/top3 - Sends you the top3", "\n",
+                           "/top5 - Sends you the top5", "\n",
+                           "/top10 - Sends you the top10"]
         sendMessage m uid hm
 
     changeThreshold conn uid chunks = do

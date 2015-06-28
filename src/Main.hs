@@ -29,6 +29,6 @@ main = do
     runBot config $ do
         ancor
         handler
-        server
+        server 
 
     closeManager manager
