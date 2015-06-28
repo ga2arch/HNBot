@@ -1,11 +1,13 @@
-{-# LANGUAGE OverloadedStrings, DeriveGeneric,
+{-# LANGUAGE OverloadedStrings, DeriveGeneric, ScopedTypeVariables,
              FlexibleContexts, GeneralizedNewtypeDeriving #-}
 module Bot where
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
-import Control.Concurrent.Async (async, mapConcurrently)
+import Control.Concurrent.Async
+import Control.DeepSeq
+import Control.Exception
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad
 import Data.Aeson
@@ -15,6 +17,7 @@ import Data.List
 import Data.List.Split (splitOn)
 import GHC.Generics
 import Web.Scotty
+import Network.HTTP.Base (urlEncodeVars)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 
@@ -53,11 +56,12 @@ instance ToJSON   Update
 type NewsSent = M.Map Int [Int]
 
 data BotData = BotData {
-    redisConn :: R.Connection
-,   botPort   :: Int
-,   botToken  :: String
-,   botState  :: MVar BotState
-,   botChan   :: Chan Message
+    redisConn  :: R.Connection
+,   botPort    :: Int
+,   botToken   :: String
+,   botState   :: MVar BotState
+,   botChan    :: Chan Message
+,   botManager :: Manager
 }
 
 data BotState = BotState {
@@ -73,31 +77,34 @@ runBot config f = Re.runReaderT (unBot f) config
 
 handler :: Bot ()
 handler = do
-    chan  <- fmap botChan   Re.ask
-    conn  <- fmap redisConn Re.ask
-    state <- fmap botState  Re.ask
+    chan  <- fmap botChan     Re.ask
+    conn  <- fmap redisConn   Re.ask
+    state <- fmap botState    Re.ask
+    m     <- fmap botManager  Re.ask
+
 
     liftIO . async . forever $ do
         Message _ (User uid) content <- readChan chan
 
         case content of
-            Just text -> handleText conn state uid text
+            Just text -> do
+                tryAny $ handleText m conn state uid text
+                return ()
             Nothing   -> return ()
 
     return ()
   where
-    handleText conn state uid ('/':cmd) = do
+    handleText m conn state uid cmd = do
         let chunks = splitOn " " cmd
-        async $ case (head chunks) of
-            "start"     -> addUser conn uid
-            "stop"      -> delUser conn uid
-            "help"      -> helpCmd uid
-            "threshold" -> changeThreshold conn uid chunks
-            "top5"      -> top5 state uid
+        case (head chunks) of
+            "/start"     -> addUser conn uid
+            "/stop"      -> delUser conn uid
+            "/help"      -> helpCmd m uid
+            "/threshold" -> changeThreshold conn uid chunks
+            "/top3"      -> topN m state uid 3
+            "/top5"      -> topN m state uid 5
+            "/top10"     -> topN m state uid 10
             _           -> return ()
-        return ()
-
-    handleText _ _ _ _ = return ()
 
     addUser conn uid = do
         R.runRedis conn $ R.set (C.pack $ show uid) "10"
@@ -107,12 +114,12 @@ handler = do
         R.runRedis conn $ R.del [C.pack $ show uid]
         return ()
 
-    helpCmd uid = do
+    helpCmd m uid = do
         let hm = mconcat [ "/start - Start receving news", "\n",
                            "/stop  - Stop receiving news", "\n",
                            "/threshold num - Set news threshold", "\n",
-                           "/top10 - Sends you the top10"]
-        sendMessage uid hm
+                           "/top5 - Sends you the top10"]
+        sendMessage m uid hm
 
     changeThreshold conn uid chunks = do
         if length chunks > 1
@@ -126,9 +133,9 @@ handler = do
             else
                 return ()
 
-    top5 state uid = do
+    topN m state uid n = do
         ids <- fmap botTop $ readMVar state
-        mapM_ (\s -> HN.getStory s >>= sendStory uid) $ take 4 ids
+        mapM_ (\s -> HN.getStory m s >>= sendStory m uid) $ take n ids
 
 server :: Bot ()
 server = do
@@ -146,48 +153,65 @@ server = do
                     _ -> return ()
             html "ok"
 
-sendMessage :: Int -> String -> IO ()
-sendMessage userId text = do
+sendMessage :: Manager -> Int -> String -> IO ()
+sendMessage m userId text = do
     -- FIXME (reading everytime is horrible)
     token <- fmap (head . splitOn "\n") $ readFile "token"
     let baseUrl = "https://api.telegram.org/bot"
-    let url = mconcat [baseUrl, token, "/sendMessage",
-                       "?chat_id=", (show userId), "&text=", text]
+    let payload = urlEncodeVars [("chat_id", (show userId)),
+                                 ("text", text),
+                                 ("disable_web_page_preview", "true")]
+    let url = mconcat [baseUrl, token, "/sendMessage?", payload]
 
     req <- parseUrl url
-    withManager tlsManagerSettings $ httpNoBody req
+    r <- try $ httpLbs req m
+    case r of
+        Left (ex :: SomeException) -> print ex
+        Right _  -> return ()
+
+sendStory _ _ (HN.Story 0 _ _) = return ()
+sendStory m userId (HN.Story sid title url) = do
+    let hnUrl = "https://news.ycombinator.com/item?id="
+    sendMessage m userId $
+        mconcat [title, "\n\n",
+                 url,   "\n\n",
+                 hnUrl, (show sid)]
     return ()
 
-sendStory _ (HN.Story 0 _ _) = return ()
-sendStory userId (HN.Story sid title url) = do
-    let hnUrl = "https://news.ycombinator.com/item?id="
-    sendMessage userId $
-        mconcat [title, " - ", url, " - ", hnUrl, (show sid)]
-    return ()
+tryAny :: NFData a => IO a -> IO (Either SomeException a)
+tryAny action = f $ do
+    res <- action
+    evaluate $!! res
+  where
+      f action = withAsync action waitCatch
 
 ancor :: Bot ()
 ancor = do
     bot <- Re.ask
+    m   <- fmap botManager Re.ask
 
     liftIO . async . forever $ do
         users <- getUsers $ redisConn bot
 
         oldTop <- fmap botTop (readMVar $ botState bot)
-        newTop <- HN.getTopStories
+        newTop <- HN.getTopStories m
 
-        mapM_ (process newTop oldTop bot) users
+        mapM_ (process m newTop oldTop bot) users
+
+        modifyMVar_ (botState bot) $ \state -> do
+            return $ state { botTop = newTop }
 
         threadDelay $ 60 * 1000 * 1000
 
     return ()
   where
     getUsers conn = R.runRedis conn $ do
-        (Right ks) <- R.keys "*"
+        Right ks <- R.keys "*"
         mapM (\k -> do
-            (Right t) <- R.get k
+            Right t <- R.get k
             return (k, fromJust t)) ks
 
-    process newTop oldTop bot (uid, t) = do
+    process m newTop oldTop bot (uid, t) = do
         newsSent <- fmap botNewsSent (readMVar $ botState bot)
 
         let userId = read $ C.unpack uid
@@ -200,10 +224,9 @@ ancor = do
         let n = take threshold newTop
         let o = take threshold oldTop
         let diff = (n \\ o) \\ sent
-
-        print diff
         let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
-        mapM_ (\s -> HN.getStory s >>= sendStory userId) diff
+
+        tryAny $ mapM_ (\s -> HN.getStory m s >>= sendStory m userId) diff
 
         modifyMVar_ (botState bot) $ \state -> do
             return $ state { botNewsSent = updatedNewsSent }

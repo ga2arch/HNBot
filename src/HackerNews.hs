@@ -35,27 +35,23 @@ instance ToJSON   Story
 instance Default Story where
     def = Story 0 "" ""
 
-makeReq url = do
+makeReq m url = do
     let baseUrl = "https://hacker-news.firebaseio.com/v0/"
     req <- parseUrl $ baseUrl <> url
 
-    withManager tlsManagerSettings $ \m ->
-        withResponse req m $ \resp -> do
-            body <- brConsume $ responseBody resp
-            case (eitherDecode $ BSL.fromChunks body) of
-                Left err -> return def
-                Right d  -> return d
+    withResponse req m $ \resp -> do
+        body <- brConsume $ responseBody resp
+        case (eitherDecode $ BSL.fromChunks body) of
+            Left err -> return def
+            Right d  -> return d
 
-getStory :: Int -> IO Story
-getStory sid = makeReq $ "item/" <> (show sid) <> ".json"
+getStory :: Manager -> Int -> IO Story
+getStory m sid = makeReq m $ "item/" <> (show sid) <> ".json"
 
-getTopStories :: IO [Int]
-getTopStories = fmap fromIds $ makeReq "topstories.json"
+getTopStories :: Manager -> IO [Int]
+getTopStories m = fmap fromIds $ makeReq m "topstories.json"
   where
       fromIds (Ids ids) = ids
 
-getTop10 :: IO [Int]
-getTop10 = fmap (take 10) getTopStories
-
-getTopN :: Int -> IO [Int]
-getTopN n = fmap (take n) getTopStories
+getTop10 :: Manager -> IO [Int]
+getTop10 m = fmap (take 10) $ getTopStories m

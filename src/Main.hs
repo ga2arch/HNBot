@@ -4,6 +4,8 @@ module Main where
 import Control.Concurrent.Async (async)
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
+import Network.HTTP.Client
+import Network.HTTP.Client.TLS
 
 import Bot
 
@@ -13,16 +15,20 @@ import qualified Database.Redis as R
 import qualified HackerNews as HN
 
 main = do
+    manager <- newManager tlsManagerSettings
     conn <- R.connect R.defaultConnectInfo
-    top <- HN.getTopStories
+    top <- HN.getTopStories manager
 
     chan <- newChan
     state <- newMVar $ BotState { botNewsSent = M.empty, botTop = top }
+
     let config = BotData { redisConn = conn,
         botPort = 8080, botState = state,
-        botToken = "", botChan = chan }
+        botToken = "", botChan = chan, botManager = manager }
 
     runBot config $ do
-        ancor 
+        ancor
         handler
         server
+
+    closeManager manager
