@@ -81,28 +81,29 @@ handler = do
     conn  <- Re.asks redisConn
     state <- Re.asks botState
     m     <- Re.asks botManager
+    token <- Re.asks botToken
 
     liftIO . async . forever $ do
         Message _ (User uid) content <- readChan chan
 
         case content of
             Just text -> do
-                tryAny $ handleText m conn state uid text
+                tryAny $ handleText m token conn state uid text
                 return ()
             Nothing   -> return ()
 
     return ()
   where
-    handleText m conn state uid cmd = do
+    handleText m token conn state uid cmd = do
         let chunks = splitOn " " cmd
         case (head chunks) of
             "/start"     -> addUser conn uid
             "/stop"      -> delUser conn uid
-            "/help"      -> helpCmd m uid
+            "/help"      -> helpCmd m token uid
             "/threshold" -> changeThreshold conn uid chunks
-            "/top3"      -> topN m state uid 3
-            "/top5"      -> topN m state uid 5
-            "/top10"     -> topN m state uid 10
+            "/top3"      -> topN m token state uid 3
+            "/top5"      -> topN m token state uid 5
+            "/top10"     -> topN m token state uid 10
             _           -> return ()
 
     addUser conn uid = do
@@ -113,14 +114,14 @@ handler = do
         R.runRedis conn $ R.del [C.pack $ show uid]
         return ()
 
-    helpCmd m uid = do
+    helpCmd m token uid = do
         let hm = mconcat [ "/start - Start receving news", "\n",
                            "/stop  - Stop receiving news", "\n",
-                           "/threshold num - Set news threshold", "\n",
+                           "/threshold num - Set threshold for the news to receive", "\n",
                            "/top3 - Sends you the top3", "\n",
                            "/top5 - Sends you the top5", "\n",
                            "/top10 - Sends you the top10"]
-        sendMessage m uid hm
+        sendMessage m token uid hm
 
     changeThreshold conn uid chunks = do
         if length chunks > 1
@@ -134,9 +135,9 @@ handler = do
             else
                 return ()
 
-    topN m state uid n = do
+    topN m token state uid n = do
         ids <- fmap botTop $ readMVar state
-        mapM_ (\s -> HN.getStory m s >>= sendStory m uid) $ take n ids
+        mapM_ (\s -> HN.getStory m s >>= sendStory m token uid) $ take n ids
 
 server :: Bot ()
 server = do
@@ -156,10 +157,8 @@ server = do
                     _ -> return ()
             html "ok"
 
-sendMessage :: Manager -> Int -> String -> IO ()
-sendMessage m userId text = do
-    -- FIXME (reading everytime is horrible)
-    token <- fmap (head . splitOn "\n") $ readFile "token"
+sendMessage :: Manager -> String -> Int -> String -> IO ()
+sendMessage m token userId text = do
     let baseUrl = "https://api.telegram.org/bot"
     let payload = urlEncodeVars [("chat_id", (show userId)),
                                  ("text", text),
@@ -172,10 +171,10 @@ sendMessage m userId text = do
         Left (ex :: SomeException) -> print ex
         Right _  -> return ()
 
-sendStory _ _ (HN.Story 0 _ _) = return ()
-sendStory m userId (HN.Story sid title url) = do
+sendStory _ _ _ (HN.Story 0 _ _) = return ()
+sendStory m token userId (HN.Story sid title url) = do
     let hnUrl = "https://news.ycombinator.com/item?id="
-    sendMessage m userId $
+    sendMessage m token userId $
         mconcat [title, "\n\n",
                  url,   "\n\n",
                  hnUrl, (show sid)]
@@ -190,8 +189,10 @@ tryAny action = f $ do
 
 ancor :: Bot ()
 ancor = do
-    bot <- Re.ask
-    m   <- Re.asks botManager
+    bot   <- Re.ask
+    m     <- Re.asks botManager
+    token <- Re.asks botToken
+
 
     liftIO . async . forever $ do
         users <- getUsers $ redisConn bot
@@ -199,7 +200,7 @@ ancor = do
         oldTop <- fmap botTop (readMVar $ botState bot)
         newTop <- HN.getTopStories m
 
-        mapM_ (process m newTop oldTop bot) users
+        mapM_ (process m token newTop oldTop bot) users
 
         modifyMVar_ (botState bot) $ \state -> do
             return $ state { botTop = newTop }
@@ -214,7 +215,7 @@ ancor = do
             Right t <- R.get k
             return (k, fromJust t)) ks
 
-    process m newTop oldTop bot (uid, t) = do
+    process m token newTop oldTop bot (uid, t) = do
         newsSent <- fmap botNewsSent (readMVar $ botState bot)
 
         let userId = read $ C.unpack uid
@@ -229,7 +230,7 @@ ancor = do
         let diff = (n \\ o) \\ sent
         let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
 
-        tryAny $ mapM_ (\s -> HN.getStory m s >>= sendStory m userId) diff
+        tryAny $ mapM_ (\s -> HN.getStory m s >>= sendStory m token userId) diff
 
         modifyMVar_ (botState bot) $ \state -> do
             return $ state { botNewsSent = updatedNewsSent }

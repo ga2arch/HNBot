@@ -4,6 +4,7 @@ module Main where
 import Control.Concurrent.Async (async)
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
+import Data.List.Split (splitOn)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 
@@ -16,6 +17,8 @@ import qualified HackerNews as HN
 
 main = do
     manager <- newManager tlsManagerSettings
+    token <- fmap (head . splitOn "\n") $ readFile "token"
+
     conn <- R.connect R.defaultConnectInfo
     top <- HN.getTopStories manager
 
@@ -24,11 +27,11 @@ main = do
 
     let config = BotData { redisConn = conn,
         botPort = 8080, botState = state,
-        botToken = "", botChan = chan, botManager = manager }
+        botToken = token, botChan = chan, botManager = manager }
 
     runBot config $ do
         ancor
         handler
-        server 
+        server
 
     closeManager manager
