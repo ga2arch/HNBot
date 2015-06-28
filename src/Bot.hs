@@ -4,6 +4,7 @@ module Bot where
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.MVar
+import Control.Concurrent.Chan
 import Control.Concurrent.Async (async, mapConcurrently)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad
@@ -56,7 +57,7 @@ data BotData = BotData {
 ,   botPort   :: Int
 ,   botToken  :: String
 ,   botState  :: MVar BotState
-,   botChan   :: MVar Message
+,   botChan   :: Chan Message
 }
 
 data BotState = BotState {
@@ -72,28 +73,31 @@ runBot config f = Re.runReaderT (unBot f) config
 
 handler :: Bot ()
 handler = do
-    chan <- fmap botChan Re.ask
-    conn <- fmap redisConn Re.ask
+    chan  <- fmap botChan   Re.ask
+    conn  <- fmap redisConn Re.ask
+    state <- fmap botState  Re.ask
 
     liftIO . async . forever $ do
-        Message _ (User uid) content <- takeMVar chan
+        Message _ (User uid) content <- readChan chan
 
         case content of
-            Just text -> handleText conn uid text
+            Just text -> handleText conn state uid text
             Nothing   -> return ()
 
     return ()
   where
-    handleText conn uid ('/':cmd) = do
+    handleText conn state uid ('/':cmd) = do
         let chunks = splitOn " " cmd
-        case (head chunks) of
+        async $ case (head chunks) of
             "start"     -> addUser conn uid
             "stop"      -> delUser conn uid
             "help"      -> helpCmd uid
             "threshold" -> changeThreshold conn uid chunks
+            "top5"      -> top5 state uid
             _           -> return ()
+        return ()
 
-    handleText _ _ _ = return ()
+    handleText _ _ _ _ = return ()
 
     addUser conn uid = do
         R.runRedis conn $ R.set (C.pack $ show uid) "10"
@@ -106,7 +110,8 @@ handler = do
     helpCmd uid = do
         let hm = mconcat [ "/start - Start receving news", "\n",
                            "/stop  - Stop receiving news", "\n",
-                           "/threshold num - Set news threshold"]
+                           "/threshold num - Set news threshold", "\n",
+                           "/top10 - Sends you the top10"]
         sendMessage uid hm
 
     changeThreshold conn uid chunks = do
@@ -121,6 +126,10 @@ handler = do
             else
                 return ()
 
+    top5 state uid = do
+        ids <- fmap botTop $ readMVar state
+        mapM_ (\s -> HN.getStory s >>= sendStory uid) $ take 4 ids
+
 server :: Bot ()
 server = do
     conn <- fmap redisConn Re.ask
@@ -133,10 +142,11 @@ server = do
             liftIO $ do
                 let (Update _ message) = update
                 case message of
-                    Just m@(Message _ user (Just text)) -> putMVar chan m
+                    Just m@(Message _ user (Just text)) -> writeChan chan m
                     _ -> return ()
             html "ok"
 
+sendMessage :: Int -> String -> IO ()
 sendMessage userId text = do
     -- FIXME (reading everytime is horrible)
     token <- fmap (head . splitOn "\n") $ readFile "token"
@@ -146,6 +156,13 @@ sendMessage userId text = do
 
     req <- parseUrl url
     withManager tlsManagerSettings $ httpNoBody req
+    return ()
+
+sendStory _ (HN.Story 0 _ _) = return ()
+sendStory userId (HN.Story sid title url) = do
+    let hnUrl = "https://news.ycombinator.com/item?id="
+    sendMessage userId $
+        mconcat [title, " - ", url, " - ", hnUrl, (show sid)]
     return ()
 
 ancor :: Bot ()
@@ -186,17 +203,7 @@ ancor = do
 
         print diff
         let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
-        stories <- mapM HN.getStory diff
+        mapM_ (\s -> HN.getStory s >>= sendStory userId) diff
 
-        mapM_ (send userId) stories
         modifyMVar_ (botState bot) $ \state -> do
             return $ state { botNewsSent = updatedNewsSent }
-
-    send _ (HN.Story 0 _ _) =
-        return ()
-
-    send userId (HN.Story sid title url) = do
-        let hnUrl = "https://news.ycombinator.com/item?id="
-        sendMessage (User userId) $
-            mconcat [title, " - ", url, " - ", hnUrl, (show sid)]
-        return ()
