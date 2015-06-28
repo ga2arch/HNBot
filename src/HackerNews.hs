@@ -29,11 +29,8 @@ data Story = Story {
 ,   url :: String
 } deriving (Show, Generic)
 
-instance FromJSON Story where
-   parseJSON (Object o) =
-     Story <$> o .: "id"
-           <*> o .: "title"
-           <*> o .: "url"
+instance FromJSON Story
+instance ToJSON   Story
 
 instance Default Story where
     def = Story 0 "" ""
@@ -46,7 +43,7 @@ makeReq url = do
         withResponse req m $ \resp -> do
             body <- brConsume $ responseBody resp
             case (eitherDecode $ BSL.fromChunks body) of
-                Left err -> print url >> return def
+                Left err -> return def
                 Right d  -> return d
 
 getStory :: Int -> IO Story
