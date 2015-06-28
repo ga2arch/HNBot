@@ -77,10 +77,10 @@ runBot config f = Re.runReaderT (unBot f) config
 
 handler :: Bot ()
 handler = do
-    chan  <- fmap botChan     Re.ask
-    conn  <- fmap redisConn   Re.ask
-    state <- fmap botState    Re.ask
-    m     <- fmap botManager  Re.ask
+    chan  <- Re.asks botChan
+    conn  <- Re.asks redisConn
+    state <- Re.asks botState
+    m     <- Re.asks botManager
 
     liftIO . async . forever $ do
         Message _ (User uid) content <- readChan chan
@@ -140,14 +140,16 @@ handler = do
 
 server :: Bot ()
 server = do
-    conn <- fmap redisConn Re.ask
-    port <- fmap botPort   Re.ask
-    chan <- fmap botChan   Re.ask
+    conn <- Re.asks redisConn
+    port <- Re.asks botPort
+    chan <- Re.asks botChan
 
     liftIO . scotty port $ do
         post "/" $ do
             update <- jsonData :: ActionM Update
             liftIO $ do
+                print update
+
                 let (Update _ message) = update
                 case message of
                     Just m@(Message _ user (Just text)) -> writeChan chan m
@@ -189,7 +191,7 @@ tryAny action = f $ do
 ancor :: Bot ()
 ancor = do
     bot <- Re.ask
-    m   <- fmap botManager Re.ask
+    m   <- Re.asks botManager
 
     liftIO . async . forever $ do
         users <- getUsers $ redisConn bot
