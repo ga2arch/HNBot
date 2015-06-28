@@ -2,6 +2,8 @@
 module Main where
 
 import Control.Concurrent.Async (async)
+import Control.Concurrent.MVar
+
 import Bot
 
 import qualified Data.Map.Strict as M
@@ -12,5 +14,11 @@ import qualified HackerNews as HN
 main = do
     conn <- R.connect R.defaultConnectInfo
     top <- HN.getTopStories
-    async $ S.runStateT (ancor conn) (M.empty, top)
-    server conn 
+
+    state <- newMVar $ BotState { botNewsSent = M.empty, botTop = top }
+    let config = BotConfig { redisConn = conn,
+        botPort = 8080, botState = state, botToken = "" }
+
+    runBot config $ do
+        ancor
+        server

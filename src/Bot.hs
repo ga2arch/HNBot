@@ -1,10 +1,12 @@
-{-# LANGUAGE OverloadedStrings, DeriveGeneric, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, DeriveGeneric,
+             FlexibleContexts, GeneralizedNewtypeDeriving #-}
 module Bot where
 
 import Control.Concurrent (threadDelay)
+import Control.Concurrent.MVar
 import Control.Concurrent.Async (async, mapConcurrently)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad (forever)
+import Control.Monad
 import Data.Aeson
 import Data.Monoid
 import Data.Maybe (fromJust)
@@ -17,6 +19,8 @@ import Network.HTTP.Client.TLS
 
 import qualified Data.Map.Strict as M
 import qualified Control.Monad.State as S
+import qualified Control.Monad.Reader as Re
+
 import qualified Data.ByteString.Char8 as C
 import qualified Database.Redis as R
 import qualified HackerNews as HN
@@ -47,6 +51,24 @@ instance ToJSON   Update
 
 type NewsSent = M.Map Int [Int]
 
+data BotConfig = BotConfig {
+    redisConn :: R.Connection
+,   botPort   :: Int
+,   botToken  :: String
+,   botState  :: MVar BotState
+}
+
+data BotState = BotState {
+    botNewsSent :: NewsSent
+,   botTop      :: [Int]
+} deriving (Show)
+
+newtype Bot a = Bot { unBot :: Re.ReaderT BotConfig IO a }
+    deriving (Monad, Applicative, Functor,
+              Re.MonadIO, Re.MonadReader BotConfig)
+
+runBot config f = Re.runReaderT (unBot f) config
+
 handleMessage :: User -> String -> R.Redis ()
 handleMessage u@(User suserId) text = do
     let userId = C.pack . show $ suserId
@@ -70,8 +92,11 @@ handleMessage u@(User suserId) text = do
               Just _ -> R.set userId (C.pack value) >> return ()
               Nothing -> return ()
 
-server conn = do
-    scotty 8080 $ do
+server :: Bot ()
+server = do
+    conn <- fmap redisConn Re.ask
+
+    liftIO $ scotty 8080 $ do
         post "/" $ do
             update <- jsonData :: ActionM Update
             liftIO $ do
@@ -94,23 +119,29 @@ sendMessage (User userId) text = do
     req <- parseUrl url
     withManager tlsManagerSettings $ httpNoBody req
 
-ancor :: R.Connection -> S.StateT (NewsSent, [Int]) IO ()
-ancor conn = forever $ do
-    users <- liftIO $ R.runRedis conn $ do
-        (Right ks) <- R.keys "*"
-        mapM (\k -> do
-            (Right t) <- R.get k
-            return (k, fromJust t)) ks
+ancor :: Bot ()
+ancor = do
+    bot <- Re.ask
 
-    (_, oldTop) <- S.get
-    newTop <- liftIO $ HN.getTopStories
+    _ <- liftIO . async . forever . liftIO $ do
+        users <- R.runRedis (redisConn bot) $ do
+            (Right ks) <- R.keys "*"
+            mapM (\k -> do
+                (Right t) <- R.get k
+                return (k, fromJust t)) ks
 
-    mapM_ (f newTop oldTop) users
+        oldTop <- fmap botTop (readMVar $ botState bot)
+        newTop <- HN.getTopStories
 
-    liftIO $ threadDelay $ 60 * 1000 * 1000
+        mapM_ (f newTop oldTop bot) users
+
+        threadDelay $ 60 * 1000 * 1000
+
+    return ()
   where
-    f newTop oldTop (uid, t) = do
-        (newsSent, _) <- S.get
+    f newTop oldTop bot (uid, t) = do
+        newsSent <- fmap botNewsSent (readMVar $ botState bot)
+
         let userId = read $ C.unpack uid
         let threshold = read $ C.unpack t
 
@@ -122,12 +153,13 @@ ancor conn = forever $ do
         let o = take threshold oldTop
         let diff = (n \\ o) \\ sent
 
-        liftIO $ print diff
+        print diff
         let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
-        stories <- liftIO $ mapM HN.getStory diff
+        stories <- mapM HN.getStory diff
 
-        mapM_ (liftIO . send userId) stories
-        S.put (updatedNewsSent, newTop)
+        mapM_ (send userId) stories
+        modifyMVar_ (botState bot) $ \state -> do
+            return $ state { botNewsSent = updatedNewsSent }
 
     send _ (HN.Story 0 _ _) =
         return ()
