@@ -20,7 +20,7 @@ main = do
     token <- fmap (head . splitOn "\n") $ readFile "token"
 
     conn <- R.connect R.defaultConnectInfo
-    top <- HN.getTopStories manager
+    top <- HN.getTopStories manager    
 
     chan <- newChan
     state <- newMVar $ BotState { botNewsSent = M.empty, botTop = top }

@@ -126,11 +126,11 @@ handler = do
     changeThreshold conn uid chunks = do
         if length chunks > 1
             then do
-                let t = chunks !! 1
+                let t = (read $ chunks !! 1) :: Int
                 R.runRedis conn $ do
                     (Right u) <- R.get (C.pack $ show uid)
                     case u of
-                        Just _ -> R.set (C.pack $ show uid) (C.pack t) >> return ()
+                        Just _ -> R.set (C.pack $ show uid) (C.pack $ show t) >> return ()
                         Nothing -> return ()
             else
                 return ()
@@ -141,7 +141,6 @@ handler = do
 
 server :: Bot ()
 server = do
-    conn <- Re.asks redisConn
     port <- Re.asks botPort
     chan <- Re.asks botChan
 
@@ -193,7 +192,6 @@ ancor = do
     m     <- Re.asks botManager
     token <- Re.asks botToken
 
-
     liftIO . async . forever $ do
         users <- getUsers $ redisConn bot
 
@@ -201,7 +199,6 @@ ancor = do
         newTop <- HN.getTopStories m
 
         mapM_ (process m token newTop oldTop bot) users
-
         modifyMVar_ (botState bot) $ \state -> do
             return $ state { botTop = newTop }
 
@@ -228,9 +225,12 @@ ancor = do
         let n = take threshold newTop
         let o = take threshold oldTop
         let diff = (n \\ o) \\ sent
-        let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
 
-        tryAny $ mapM_ (\s -> HN.getStory m s >>= sendStory m token userId) diff
+        liftIO $ print diff
+        when (length diff > 0) $ do
+            let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
 
-        modifyMVar_ (botState bot) $ \state -> do
-            return $ state { botNewsSent = updatedNewsSent }
+            tryAny $ mapM_ (\s -> HN.getStory m s >>= sendStory m token userId) diff
+
+            modifyMVar_ (botState bot) $ \state -> do
+                return $ state { botNewsSent = updatedNewsSent }
