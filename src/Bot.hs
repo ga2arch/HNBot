@@ -48,7 +48,7 @@ instance ToJSON   Update
 type NewsSent = M.Map Int [Int]
 
 handleMessage :: User -> String -> R.Redis ()
-handleMessage (User suserId) text = do
+handleMessage u@(User suserId) text = do
     let userId = C.pack . show $ suserId
 
     let chunks = splitOn " " text :: [String]
@@ -58,6 +58,8 @@ handleMessage (User suserId) text = do
         "/threshold" -> if length chunks == 2
             then (changeThreshold userId $ chunks !! 1) >> return ()
             else return ()
+        "/help" -> (liftIO $ sendMessage u $ "/start\n/stop\n/threshold <num>")
+            >> return ()
         _ -> return ()
   where
       saveUser userId = R.set userId "10"
@@ -92,7 +94,7 @@ sendMessage (User userId) text = do
     req <- parseUrl url
     withManager tlsManagerSettings $ httpNoBody req
 
-ancor :: R.Connection -> S.StateT [Int] IO ()
+ancor :: R.Connection -> S.StateT (NewsSent, [Int]) IO ()
 ancor conn = forever $ do
     users <- liftIO $ R.runRedis conn $ do
         (Right ks) <- R.keys "*"
@@ -100,30 +102,32 @@ ancor conn = forever $ do
             (Right t) <- R.get k
             return (k, fromJust t)) ks
 
-    oldTop <- S.get
+    (_, oldTop) <- S.get
     newTop <- liftIO $ HN.getTopStories
 
     mapM_ (f newTop oldTop) users
 
-    S.put newTop
     liftIO $ threadDelay $ 60 * 1000 * 1000
   where
     f newTop oldTop (uid, t) = do
+        (newsSent, _) <- S.get
         let userId = read $ C.unpack uid
         let threshold = read $ C.unpack t
 
-        --let sent = if M.member userId newsSent
-        --    then newsSent M.! userId
-        --    else []
+        let sent = if M.member userId newsSent
+            then newsSent M.! userId
+            else []
 
         let n = take threshold newTop
         let o = take threshold oldTop
-        let diff = n \\ o
+        let diff = (n \\ o) \\ sent
 
-        --let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
+        liftIO $ print diff
+        let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
         stories <- liftIO $ mapM HN.getStory diff
 
         mapM_ (liftIO . send userId) stories
+        S.put (updatedNewsSent, newTop)
 
     send _ (HN.Story 0 _ _) =
         return ()
