@@ -20,18 +20,21 @@ main = do
     token <- fmap (head . splitOn "\n") $ readFile "token"
 
     conn <- R.connect R.defaultConnectInfo
-    top <- HN.getTopStories manager    
+    top <- HN.getTopStories manager
 
     chan <- newChan
-    state <- newMVar $ BotState { botNewsSent = M.empty, botTop = top }
+    state <- newMVar $ BotState { botNewsSent = M.empty,
+                                  botTop = top,
+                                  botCache = M.empty }
 
     let config = BotData { redisConn = conn,
         botPort = 8080, botState = state,
-        botToken = token, botChan = chan, botManager = manager }
+        botToken = token, botChan = chan,
+        botManager = manager }
 
     runBot config $ do
         ancor
-        handler
+        handler 
         server
 
     closeManager manager

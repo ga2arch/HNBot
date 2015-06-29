@@ -66,6 +66,7 @@ data BotData = BotData {
 
 data BotState = BotState {
     botNewsSent :: NewsSent
+,   botCache    :: M.Map Int HN.Story
 ,   botTop      :: [Int]
 } deriving (Show)
 
@@ -137,6 +138,7 @@ handler = do
 
     topN m token state uid n = do
         ids <- fmap botTop $ readMVar state
+        sendStory m token userId story) diff
         mapM_ (\s -> HN.getStory m s >>= sendStory m token uid) $ take n ids
 
 server :: Bot ()
@@ -165,7 +167,7 @@ sendMessage m token userId text = do
     let url = mconcat [baseUrl, token, "/sendMessage?", payload]
 
     req <- parseUrl url
-    r <- try $ httpLbs req m
+    r <- try $ httpNoBody req m
     case r of
         Left (ex :: SomeException) -> print ex
         Right _  -> return ()
@@ -200,7 +202,7 @@ ancor = do
 
         mapM_ (process m token newTop oldTop bot) users
         modifyMVar_ (botState bot) $ \state -> do
-            return $ state { botTop = newTop }
+            return $ state { botTop = newTop, botCache = M.empty }
 
         threadDelay $ 60 * 1000 * 1000
 
@@ -214,6 +216,7 @@ ancor = do
 
     process m token newTop oldTop bot (uid, t) = do
         newsSent <- fmap botNewsSent (readMVar $ botState bot)
+        cache    <- fmap botCache    (readMVar $ botState bot)
 
         let userId = read $ C.unpack uid
         let threshold = read $ C.unpack t
@@ -230,7 +233,20 @@ ancor = do
         when (length diff > 0) $ do
             let updatedNewsSent = M.insert userId (diff ++ sent) newsSent
 
-            tryAny $ mapM_ (\s -> HN.getStory m s >>= sendStory m token userId) diff
+            mapM_ (\i -> do
+                story <- if M.member i cache
+                    then return $ cache M.! i
+                    else do
+                        story <- HN.getStory m i
+                        let updatedCache = M.insert i story cache
+
+                        modifyMVar_ (botState bot) $ \state -> do
+                            return $ state { botCache = updatedCache }
+
+                        return story
+
+                sendStory m token userId story) diff
+
 
             modifyMVar_ (botState bot) $ \state -> do
                 return $ state { botNewsSent = updatedNewsSent }
