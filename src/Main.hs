@@ -1,37 +1,28 @@
-{-# LANGUAGE OverloadedStrings, DeriveGeneric, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, DeriveGeneric,
+             FlexibleContexts, RankNTypes, ExistentialQuantification #-}
 module Main where
 
-import Control.Concurrent.Async (async)
 import Control.Concurrent.MVar
-import Control.Concurrent.Chan
-import Data.List.Split (splitOn)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 
 import Bot
 
-import qualified Data.Map.Strict as M
-import qualified Control.Monad.State as S
-import qualified Database.Redis as R
-import qualified HackerNews as HN
+import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
+
+-- data T = forall a. Show a => T {
+--     d :: [a]
+-- }
+--
+-- instance Show T where
+--     show (T a) = show a
 
 main = do
     manager <- newManager tlsManagerSettings
-    token <- fmap (head . splitOn "\n") $ readFile "token"
+    token <- fmap (head . T.splitOn "\n") $ TIO.readFile "token"
 
-    conn <- R.connect R.defaultConnectInfo
-    top <- HN.getTopStories manager    
+    s <- newMVar [1]
+    runBot (BotData (BotConfig 8080 token manager) (BotState s)) test
 
-    chan <- newChan
-    state <- newMVar $ BotState { botNewsSent = M.empty, botTop = top }
-
-    let config = BotData { redisConn = conn,
-        botPort = 8080, botState = state,
-        botToken = token, botChan = chan, botManager = manager }
-
-    runBot config $ do
-        ancor
-        handler
-        server
-
-    closeManager manager
+    return ()
