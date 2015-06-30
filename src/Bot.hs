@@ -14,7 +14,7 @@ import Network.HTTP.Client.TLS
 
 newtype Bot a = B { unBot :: ReaderT BotData IO a }
     deriving (Functor, Applicative, Monad, MonadReader BotData,
-              MonadIO, MonadCatch, MonadThrow)
+              MonadIO, MonadCatch, MonadThrow, MonadMask)
 
 data BotData = BotData BotConfig BotState
 
@@ -46,11 +46,13 @@ withCache f = do
     withCache' d f
   where
       withCache' :: BotData -> (forall a. a -> Bot (a, b)) -> Bot b
-      withCache' (BotData _ (BotState c)) f = do
-          cache <- liftIO $ takeMVar c
-          (newCache, result) <- f cache
-          liftIO $ putMVar c newCache
-          return result
+      withCache' (BotData _ (BotState m)) f = do
+          mask $ \restore -> do
+              cache <- liftIO $ takeMVar m
+              (newCache, result) <- restore (f cache)
+                `onException` (liftIO $ putMVar m cache)
+              liftIO $ putMVar m newCache
+              return result
 
 test :: Bot ()
 test = do
