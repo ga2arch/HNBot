@@ -28,12 +28,12 @@ per2Cmd = do
 
     lift $ send "Scrivi il primo n:" u
 
-    lift $ addCont u $ do
+    lift . addCont u $ do
         n1 <- read <$> P.many1 P.digit
 
         lift $ send "Scrivi il secondo n:" u
-        
-        lift $ addCont u $ do
+
+        lift . addCont u $ do
             n2 <- read <$> P.many1 P.digit
             lift $ send (show $ n1 * n2) u
 

@@ -158,11 +158,6 @@ delCont user = do
     modify $ \s -> do
         s { botConts =  M.insert user newConts $ botConts s }
 
-delConts :: User -> Bot ()
-delConts user = modify $ \s -> do
-    let conts = botConts s
-    s { botConts = M.delete user conts }
-
 server :: Bot ()
 server = do
     port  <- getPort
@@ -206,10 +201,8 @@ handler = do
     runConts text user (c:xs) = do
         P.runParserT c user "" text
         delCont user
-        return ()
 
     runConts text user [] = do
-        delConts user
         handleText text user
 
 send :: String -> User -> Bot ()
