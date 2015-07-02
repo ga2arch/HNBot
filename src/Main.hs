@@ -13,6 +13,7 @@ import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 
 import Bot
+import HackerNews
 
 import qualified Text.Parsec as P
 
@@ -56,6 +57,8 @@ main = do
 
     withManager tlsManagerSettings $ \manager -> do
         let config = BotConfig 8080 token manager conn
+
+        getTopStories manager >>= print 
 
         runBot config $ do
             addCmd helpCmd
