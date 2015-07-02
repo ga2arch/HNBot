@@ -144,6 +144,10 @@ addCmd cmd = do
     let cmds = botCommands s
     put $ s { botCommands = cmd:cmds }
 
+next parser = do
+    u <- P.getState
+    lift $ addCont u parser
+
 addCont :: User -> P.ParsecT String User Bot () -> Bot ()
 addCont user parser = do
     conts <- getConts user
@@ -205,8 +209,13 @@ handler = do
     runConts text user [] = do
         handleText text user
 
-send :: String -> User -> Bot ()
-send text u@(User uid) = do
+--send :: String -> Bot ()
+send text = do
+    u <- P.getState
+    lift $ send' text u
+
+send' :: String -> User -> Bot ()
+send' text u@(User uid) = do
     m     <- getManager
     token <- getToken
 

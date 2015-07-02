@@ -19,23 +19,21 @@ import qualified Text.Parsec as P
 helpCmd = do
     P.string "/help"
 
-    u <- P.getState
-    lift $ send "/*2 to multiply a number" u
+    send "/*2 to multiply a number"
 
 per2Cmd = do
-    u <- P.getState
     P.string "/+"
 
-    lift $ send "Scrivi il primo n:" u
+    send "Scrivi il primo n:"
 
-    lift . addCont u $ do
+    next $ do
         n1 <- read <$> P.many1 P.digit
 
-        lift $ send "Scrivi il secondo n:" u
+        send "Scrivi il secondo n:"
 
-        lift . addCont u $ do
+        next $ do
             n2 <- read <$> P.many1 P.digit
-            lift $ send (show $ n1 * n2) u
+            send $ show $ n1 * n2
 
 main = do
     conn <- connect defaultConnectInfo
