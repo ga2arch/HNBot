@@ -67,7 +67,7 @@ data BotState = forall a u. BotState {
     botCache       :: MVar a
 ,   botCommands    :: [Cmd]
 ,   botQueue       :: Chan Message
-,   botCmdConts     :: M.Map User (P.ParsecT String User Bot ())
+,   botConts       :: M.Map User [P.ParsecT String User Bot ()]
 }
 
 runBot :: BotConfig -> Bot a -> IO a
@@ -96,8 +96,12 @@ getQueue = gets botQueue
 getCommands :: Bot [Cmd]
 getCommands = gets botCommands
 
-getConts :: Bot (M.Map User (P.ParsecT String User Bot ()))
-getConts = gets botCmdConts
+getConts :: User -> Bot [P.ParsecT String User Bot ()]
+getConts user = do
+    conts <- gets botConts
+    if user `M.member` conts
+        then return $ conts M.! user
+        else return []
 
 getUsers :: Bot [(User, C.ByteString)]
 getUsers = do
@@ -140,15 +144,24 @@ addCmd cmd = do
     let cmds = botCommands s
     put $ s { botCommands = cmd:cmds }
 
-setCont :: User -> P.ParsecT String User Bot () -> Bot ()
-setCont user parser = modify $ \s -> do
-    let conts = botCmdConts s
-    s { botCmdConts = M.insert user parser conts }
+addCont :: User -> P.ParsecT String User Bot () -> Bot ()
+addCont user parser = do
+    conts <- getConts user
+
+    modify $ \s -> do
+        let newConts = conts ++ [parser]
+        s { botConts = M.insert user newConts $ botConts s }
 
 delCont :: User -> Bot ()
-delCont user = modify $ \s -> do
-    let conts = botCmdConts s
-    s { botCmdConts = M.delete user conts }
+delCont user = do
+    (_:newConts) <- getConts user
+    modify $ \s -> do
+        s { botConts =  M.insert user newConts $ botConts s }
+
+delConts :: User -> Bot ()
+delConts user = modify $ \s -> do
+    let conts = botConts s
+    s { botConts = M.delete user conts }
 
 server :: Bot ()
 server = do
@@ -176,14 +189,8 @@ handler = do
         Message _ user content <- liftIO $ readChan queue
         case content of
             Just text -> do
-                conts <- getConts
-                if user `M.member` conts
-                    then do
-                        let parser = conts M.! user
-                        P.runParserT parser user "" text
-                        delCont user
-                    else handleText text user
-
+                conts <- getConts user
+                runConts text user conts
             Nothing   -> return ()
 
   where
@@ -195,6 +202,15 @@ handler = do
 
         P.runParserT parser user "" text
         return ()
+
+    runConts text user (c:xs) = do
+        P.runParserT c user "" text
+        delCont user
+        return ()
+
+    runConts text user [] = do
+        delConts user
+        handleText text user
 
 send :: String -> User -> Bot ()
 send text u@(User uid) = do
