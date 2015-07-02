@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Concurrent.MVar
+import Control.Monad.IO.Class
 import Database.Redis (connect, defaultConnectInfo)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
@@ -18,12 +19,17 @@ import Data.List.Split (splitOn)
 -- instance Show T where
 --     show (T a) = show a
 
+test :: Bot ()
+test = do
+    c <- withCache $ \cache -> return (cache, "ciao")
+    liftIO $ print c
+
 main = do
     conn <- connect defaultConnectInfo
     manager <- newManager tlsManagerSettings
     token <- fmap (head . splitOn "\n") $ readFile "token"
 
-    s <- newMVar [1]
-    runBot (BotData (BotConfig 8080 token manager conn) (BotState s)) test
+    let config = BotConfig 8080 token manager conn
+    runBot config test
 
     return ()

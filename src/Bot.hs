@@ -4,8 +4,11 @@
 module Bot where
 
 import Control.Concurrent.MVar
+import Control.Concurrent.Chan
+import Control.Concurrent.Async
 import Control.Monad.Catch
 import Control.Monad.Reader
+import Control.Monad.State
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
 import Data.Maybe (fromJust)
@@ -14,8 +17,11 @@ import Network.HTTP.Base (urlEncodeVars)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 
+import qualified Text.Parsec as P
+import qualified Data.Map as M
 import qualified Database.Redis as R
 import qualified Data.ByteString.Char8 as C
+import qualified Web.Scotty as Sc
 
 data User = User {
     id :: Int
@@ -41,11 +47,9 @@ data Update = Update {
 instance FromJSON Update
 instance ToJSON   Update
 
-newtype Bot a = B { unBot :: ReaderT BotData IO a }
-    deriving (Functor, Applicative, Monad, MonadReader BotData,
-              MonadIO, MonadCatch, MonadThrow, MonadMask)
-
-data BotData = BotData BotConfig BotState
+newtype Bot a = B { unBot :: ReaderT BotConfig (StateT BotState IO) a }
+    deriving (Functor, Applicative, Monad, MonadReader BotConfig,
+              MonadState BotState, MonadIO, MonadCatch, MonadThrow, MonadMask)
 
 data BotConfig = BotConfig {
     botPort    :: Int
@@ -54,24 +58,39 @@ data BotConfig = BotConfig {
 ,   botDbConn  :: R.Connection
 }
 
-data BotState = forall a. BotState {
-    botCache :: MVar a
+data Cmd = forall a. Cmd {
+    cmdParser :: P.Parsec String () a
+,   cmdFunc   :: a -> Bot ()
 }
 
-runBot :: BotData -> Bot a -> IO a
-runBot bdata f = runReaderT (unBot f) bdata
+data BotState = forall a. BotState {
+    botCache    :: MVar a
+,   botCommands :: [Cmd]
+,   botQueue    :: Chan Message
+}
+
+runBot :: BotConfig -> Bot a -> IO a
+runBot config f = do
+    queue <- newChan
+    cache <- newEmptyMVar
+
+    let state = BotState cache [] queue
+    evalStateT (runReaderT (unBot f) config) state
 
 getPort :: Bot Int
-getPort = asks $ \(BotData c _) -> botPort c
+getPort = asks botPort
 
 getToken :: Bot String
-getToken = asks $ \(BotData c _) -> botToken c
+getToken = asks botToken
 
 getManager :: Bot Manager
-getManager = asks $ \(BotData c _) -> botManager c
+getManager = asks botManager
 
 getDbConn :: Bot R.Connection
-getDbConn = asks $ \(BotData c _) -> botDbConn c
+getDbConn = asks botDbConn
+
+getQueue :: Bot (Chan Message)
+getQueue = gets botQueue
 
 getUsers :: Bot [(User, C.ByteString)]
 getUsers = do
@@ -93,17 +112,41 @@ getUsers = do
 
 withCache :: (forall a. a -> Bot (a, b)) -> Bot b
 withCache f = do
-    d <- ask
+    d <- get
     withCache' d f
   where
-      withCache' :: BotData -> (forall a. a -> Bot (a, b)) -> Bot b
-      withCache' (BotData _ (BotState m)) f =
+      withCache' :: BotState -> (forall a. a -> Bot (a, b)) -> Bot b
+      withCache' (BotState m _ _) f =
           mask $ \restore -> do
               cache <- liftIO $ takeMVar m
               (newCache, result) <- restore (f cache)
                 `onException` (liftIO $ putMVar m cache)
               liftIO $ putMVar m newCache
               return result
+
+addCmd :: Cmd -> Bot ()
+addCmd cmd = do
+    s <- get
+    let cmds = botCommands s
+    put $ s { botCommands = cmd:cmds }
+
+server :: Bot ()
+server = do
+    port  <- getPort
+    queue <- getQueue
+
+    liftIO . async . Sc.scotty port $ do
+        Sc.post "/" $ do
+            update <- Sc.jsonData :: Sc.ActionM Update
+            liftIO $ do
+                print update
+
+                let (Update _ message) = update
+                case message of
+                    Just m@(Message _ user (Just text)) -> writeChan queue m
+                    _ -> return ()
+            Sc.html "ok"
+    return ()
 
 send :: String -> User -> Bot ()
 send text u@(User uid) = do
@@ -121,8 +164,3 @@ send text u@(User uid) = do
     case r of
         Left (ex :: SomeException) -> liftIO $ print ex
         Right _  -> return ()
-
-test :: Bot ()
-test = do
-    c <- withCache $ \cache -> return (cache, "ciao")
-    liftIO $ print c
