@@ -64,22 +64,19 @@ data Cmd = Cmd {
     cmdParser :: P.ParsecT String User Bot ()
 }
 
-data BotState = forall a u. BotState {
-    botCache       :: MVar a
-,   botCommands    :: [Cmd]
+data BotState = forall a. BotState {
+    botCommands    :: [Cmd]
 ,   botQueue       :: Chan Message
 ,   botConts       :: MVar (M.Map User (L.Lock, MVar [P.ParsecT String User Bot ()]))
 }
 
-runBot :: BotConfig -> Bot a -> IO a
+runBot :: BotConfig -> Bot b -> IO b
 runBot config f = do
     queue <- newChan
-    cache <- newEmptyMVar
     conts <- newMVar M.empty
 
-    let state = BotState cache [] queue conts
+    let state = BotState [] queue conts
     evalStateT (runReaderT (unBot f) config) state
-
 
 getPort :: Bot Int
 getPort = asks botPort
@@ -122,25 +119,25 @@ getUsers = do
     toInt :: C.ByteString -> Int
     toInt = read . C.unpack
 
-withCache :: (forall a. a -> Bot (a, b)) -> Bot b
-withCache f = do
-    d <- get
-    withCache' d f
-  where
-      withCache' :: BotState -> (forall a. a -> Bot (a, b)) -> Bot b
-      withCache' (BotState m _ _ _) f =
-          mask $ \restore -> do
-              cache <- liftIO $ takeMVar m
-              (newCache, result) <- restore (f cache)
-                `onException` (liftIO $ putMVar m cache)
-              liftIO $ putMVar m newCache
-              return result
+-- withCache :: (forall a. a -> Bot (a, b)) -> Bot b
+-- withCache f = do
+--     d <- get
+--     withCache' d f
+--   where
+--       withCache' :: BotState -> (forall a. a -> Bot (a, b)) -> Bot b
+--       withCache' (BotState m _ _ _) f = do
+--           mask $ \restore -> do
+--               cache <- liftIO $ takeMVar m :: Bot a
+--               (newCache :: a, result) <- restore (f cache)
+--                 `onException` (liftIO $ putMVar m cache)
+--               liftIO $ putMVar m newCache
+--               return result
 
-addCmd :: Cmd -> Bot ()
+--addCmd :: Cmd -> Bot ()
 addCmd cmd = do
     s <- get
     let cmds = botCommands s
-    put $ s { botCommands = cmd:cmds }
+    put $ s { botCommands = Cmd cmd:cmds }
 
 next parser = do
     u <- P.getState
