@@ -15,10 +15,12 @@ import Data.List.Split (splitOn)
 
 import qualified Text.Parsec as P
 
-echoCmd user = do
+echoCmd = do
     _ <- P.char '/'
     d <- P.many P.anyToken
-    lift $ send d user
+
+    u <- P.getState
+    lift $ send d u
 
 main = do
     conn <- connect defaultConnectInfo

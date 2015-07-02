@@ -9,6 +9,7 @@ import Control.Concurrent.Async
 import Control.Monad.Catch
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Trans.Class
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
 import Data.Maybe (fromJust)
@@ -59,13 +60,13 @@ data BotConfig = BotConfig {
 }
 
 data Cmd = Cmd {
-    cmdParser :: User -> P.ParsecT String () Bot ()
+    cmdParser :: P.ParsecT String User Bot ()
 }
 
 data BotState = forall a u. BotState {
-    botCache    :: MVar a
-,   botCommands :: [Cmd]
-,   botQueue    :: Chan Message
+    botCache       :: MVar a
+,   botCommands    :: [Cmd]
+,   botQueue       :: Chan Message
 }
 
 runBot :: BotConfig -> Bot a -> IO a
@@ -167,16 +168,15 @@ handler = do
     handleText :: String -> User -> Bot ()
     handleText text user = do
         cmds <- getCommands
-        let parsers = map (\(Cmd p) -> p user) cmds
+        let parsers = map cmdParser cmds
         let parser  = collapse (head parsers) parsers
 
-        P.runParserT parser () "" text
+        P.runParserT parser user "" text
         return ()
 
     collapse parser (p:xs) = do
         collapse (parser P.<|> p) xs
     collapse parser [] = parser
-
 
 send :: String -> User -> Bot ()
 send text u@(User uid) = do
