@@ -26,7 +26,7 @@ import qualified Web.Scotty as Sc
 
 data User = User {
     id :: Int
-} deriving (Show, Generic)
+} deriving (Show, Generic, Ord, Eq)
 
 instance FromJSON User
 instance ToJSON   User
@@ -67,6 +67,7 @@ data BotState = forall a u. BotState {
     botCache       :: MVar a
 ,   botCommands    :: [Cmd]
 ,   botQueue       :: Chan Message
+,   botCmdConts     :: M.Map User (P.ParsecT String User Bot ())
 }
 
 runBot :: BotConfig -> Bot a -> IO a
@@ -74,7 +75,7 @@ runBot config f = do
     queue <- newChan
     cache <- newEmptyMVar
 
-    let state = BotState cache [] queue
+    let state = BotState cache [] queue M.empty
     evalStateT (runReaderT (unBot f) config) state
 
 getPort :: Bot Int
@@ -94,6 +95,9 @@ getQueue = gets botQueue
 
 getCommands :: Bot [Cmd]
 getCommands = gets botCommands
+
+getConts :: Bot (M.Map User (P.ParsecT String User Bot ()))
+getConts = gets botCmdConts
 
 getUsers :: Bot [(User, C.ByteString)]
 getUsers = do
@@ -122,7 +126,7 @@ withCache f = do
     withCache' d f
   where
       withCache' :: BotState -> (forall a. a -> Bot (a, b)) -> Bot b
-      withCache' (BotState m _ _) f =
+      withCache' (BotState m _ _ _) f =
           mask $ \restore -> do
               cache <- liftIO $ takeMVar m
               (newCache, result) <- restore (f cache)
@@ -135,6 +139,16 @@ addCmd cmd = do
     s <- get
     let cmds = botCommands s
     put $ s { botCommands = cmd:cmds }
+
+setCont :: User -> P.ParsecT String User Bot () -> Bot ()
+setCont user parser = modify $ \s -> do
+    let conts = botCmdConts s
+    s { botCmdConts = M.insert user parser conts }
+
+delCont :: User -> Bot ()
+delCont user = modify $ \s -> do
+    let conts = botCmdConts s
+    s { botCmdConts = M.delete user conts }
 
 server :: Bot ()
 server = do
@@ -161,7 +175,15 @@ handler = do
     forever $ do
         Message _ user content <- liftIO $ readChan queue
         case content of
-            Just text -> handleText text user
+            Just text -> do
+                conts <- getConts
+                if user `M.member` conts
+                    then do
+                        let parser = conts M.! user
+                        P.runParserT parser user "" text
+                        delCont user
+                    else handleText text user
+
             Nothing   -> return ()
 
   where
@@ -169,14 +191,10 @@ handler = do
     handleText text user = do
         cmds <- getCommands
         let parsers = map cmdParser cmds
-        let parser  = collapse (head parsers) parsers
+        let parser  = P.choice $ map P.try parsers
 
         P.runParserT parser user "" text
         return ()
-
-    collapse parser (p:xs) = do
-        collapse (parser P.<|> p) xs
-    collapse parser [] = parser
 
 send :: String -> User -> Bot ()
 send text u@(User uid) = do
