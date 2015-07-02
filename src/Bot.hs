@@ -23,6 +23,7 @@ import qualified Data.Map as M
 import qualified Database.Redis as R
 import qualified Data.ByteString.Char8 as C
 import qualified Web.Scotty as Sc
+import qualified Control.Concurrent.Lock as L
 
 data User = User {
     id :: Int
@@ -67,16 +68,18 @@ data BotState = forall a u. BotState {
     botCache       :: MVar a
 ,   botCommands    :: [Cmd]
 ,   botQueue       :: Chan Message
-,   botConts       :: M.Map User [P.ParsecT String User Bot ()]
+,   botConts       :: MVar (M.Map User (L.Lock, MVar [P.ParsecT String User Bot ()]))
 }
 
 runBot :: BotConfig -> Bot a -> IO a
 runBot config f = do
     queue <- newChan
     cache <- newEmptyMVar
+    conts <- newMVar M.empty
 
-    let state = BotState cache [] queue M.empty
+    let state = BotState cache [] queue conts
     evalStateT (runReaderT (unBot f) config) state
+
 
 getPort :: Bot Int
 getPort = asks botPort
@@ -96,12 +99,7 @@ getQueue = gets botQueue
 getCommands :: Bot [Cmd]
 getCommands = gets botCommands
 
-getConts :: User -> Bot [P.ParsecT String User Bot ()]
-getConts user = do
-    conts <- gets botConts
-    if user `M.member` conts
-        then return $ conts M.! user
-        else return []
+getConts = gets botConts
 
 getUsers :: Bot [(User, C.ByteString)]
 getUsers = do
@@ -150,22 +148,21 @@ next parser = do
 
 addCont :: User -> P.ParsecT String User Bot () -> Bot ()
 addCont user parser = do
-    conts <- getConts user
+    mAll <- getConts
 
-    modify $ \s -> do
-        let newConts = conts ++ [parser]
-        s { botConts = M.insert user newConts $ botConts s }
+    liftIO $ modifyMVar_ mAll $ \allConts -> do
+        let (lock, mUser) = allConts M.! user
 
-delCont :: User -> Bot ()
-delCont user = do
-    (_:newConts) <- getConts user
-    modify $ \s -> do
-        s { botConts =  M.insert user newConts $ botConts s }
+        modifyMVar_ mUser $ \userConts ->
+            return $ userConts ++ [parser]
+
+        return $ M.insert user (lock, mUser) allConts
 
 server :: Bot ()
 server = do
     port  <- getPort
     queue <- getQueue
+    conts <- getConts
 
     liftIO . async . Sc.scotty port $ do
         Sc.post "/" $ do
@@ -175,21 +172,52 @@ server = do
 
                 let (Update _ message) = update
                 case message of
-                    Just m@(Message _ user (Just text)) -> writeChan queue m
+                    Just m@(Message _ user (Just text)) -> do
+                        addUser user conts
+                        writeChan queue m
                     _ -> return ()
             Sc.html "ok"
     return ()
+  where
+    addUser user conts = modifyMVar_ conts $ \m -> do
+        if user `M.member` m
+            then return m
+            else do
+                l <- L.new
+                e <- newMVar []
+                return $ M.insert user (l, e) m
 
-handler :: Bot ()
-handler = do
+handler :: String -> Bot ()
+handler n = do
+    config <- ask
+    state  <- get
+
+    liftIO . async $
+        evalStateT (runReaderT (unBot $ handler' n) config) state
+    return ()
+
+handler' :: String -> Bot ()
+handler' n = do
     queue <- getQueue
 
     forever $ do
         Message _ user content <- liftIO $ readChan queue
         case content of
             Just text -> do
-                conts <- getConts user
-                runConts text user conts
+                liftIO $ print $ n ++ " : " ++ text
+
+                mAll <- getConts
+
+                (lock, userConts) <- liftIO $ modifyMVar mAll $ \allConts -> do
+                    let (lock, mUser) = allConts M.! user
+                    L.acquire lock
+
+                    userConts <- liftIO $ readMVar mUser
+                    return (allConts, (lock, userConts))
+
+                runConts text user userConts
+                    `finally` (liftIO $ L.release lock)
+
             Nothing   -> return ()
 
   where
@@ -209,7 +237,19 @@ handler = do
     runConts text user [] = do
         handleText text user
 
---send :: String -> Bot ()
+    delCont user = do
+        mAll <- getConts
+        allConts <- liftIO $ takeMVar mAll
+
+        let (_, mUser) = allConts M.! user
+
+        liftIO $ modifyMVar_ mUser $ \conts -> do
+            case conts of
+                []     -> return []
+                (_:xs) -> return xs
+
+        liftIO $ putMVar mAll allConts
+
 send text = do
     u <- P.getState
     lift $ send' text u
