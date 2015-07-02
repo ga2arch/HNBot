@@ -4,6 +4,7 @@ module Main where
 
 import Control.Concurrent.MVar
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
 import Database.Redis (connect, defaultConnectInfo)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
@@ -12,17 +13,12 @@ import Bot
 
 import Data.List.Split (splitOn)
 
--- data T = forall a. Show a => T {
---     d :: [a]
--- }
---
--- instance Show T where
---     show (T a) = show a
+import qualified Text.Parsec as P
 
-test :: Bot ()
-test = do
-    c <- withCache $ \cache -> return (cache, "ciao")
-    liftIO $ print c
+echoCmd user = do
+    _ <- P.char '/'
+    d <- P.many P.anyToken
+    lift $ send d user
 
 main = do
     conn <- connect defaultConnectInfo
@@ -30,6 +26,10 @@ main = do
     token <- fmap (head . splitOn "\n") $ readFile "token"
 
     let config = BotConfig 8080 token manager conn
-    runBot config test
+    runBot config $ do
+        addCmd $ Cmd echoCmd
+        server
+        handler
+
 
     return ()

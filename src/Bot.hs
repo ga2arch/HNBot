@@ -58,12 +58,11 @@ data BotConfig = BotConfig {
 ,   botDbConn  :: R.Connection
 }
 
-data Cmd = forall a. Cmd {
-    cmdParser :: P.Parsec String () a
-,   cmdFunc   :: a -> Bot ()
+data Cmd = Cmd {
+    cmdParser :: User -> P.ParsecT String () Bot ()
 }
 
-data BotState = forall a. BotState {
+data BotState = forall a u. BotState {
     botCache    :: MVar a
 ,   botCommands :: [Cmd]
 ,   botQueue    :: Chan Message
@@ -92,20 +91,26 @@ getDbConn = asks botDbConn
 getQueue :: Bot (Chan Message)
 getQueue = gets botQueue
 
+getCommands :: Bot [Cmd]
+getCommands = gets botCommands
+
 getUsers :: Bot [(User, C.ByteString)]
 getUsers = do
     conn <- getDbConn
     users <- liftIO $ R.runRedis conn $ do
         ks <- query
-        mapM (\k -> do
-            Right t <- R.get k
-            return (User . toInt $ k,
-                    fromJust t)) ks
+        mapM userData ks
+
     return users
   where
     query = do
         Right ks <- R.keys "*"
         return ks
+
+    userData k = do
+        Right t <- R.get k
+        return (User . toInt $ k,
+                fromJust t)
 
     toInt :: C.ByteString -> Int
     toInt = read . C.unpack
@@ -147,6 +152,31 @@ server = do
                     _ -> return ()
             Sc.html "ok"
     return ()
+
+handler :: Bot ()
+handler = do
+    queue <- getQueue
+
+    forever $ do
+        Message _ user content <- liftIO $ readChan queue
+        case content of
+            Just text -> handleText text user
+            Nothing   -> return ()
+
+  where
+    handleText :: String -> User -> Bot ()
+    handleText text user = do
+        cmds <- getCommands
+        let parsers = map (\(Cmd p) -> p user) cmds
+        let parser  = collapse (head parsers) parsers
+
+        P.runParserT parser () "" text
+        return ()
+
+    collapse parser (p:xs) = do
+        collapse (parser P.<|> p) xs
+    collapse parser [] = parser
+
 
 send :: String -> User -> Bot ()
 send text u@(User uid) = do
