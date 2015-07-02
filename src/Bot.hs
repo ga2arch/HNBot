@@ -60,17 +60,9 @@ data BotConfig = BotConfig {
 ,   botDbConn  :: R.Connection
 }
 
-<<<<<<< HEAD
-data BotState = BotState {
-    botNewsSent :: NewsSent
-,   botCache    :: M.Map Int HN.Story
-,   botTop      :: [Int]
-} deriving (Show)
-=======
 data Cmd = Cmd {
     cmdParser :: P.ParsecT String User Bot ()
 }
->>>>>>> rewrite
 
 data BotState = forall a u. BotState {
     botCache       :: MVar a
@@ -161,38 +153,10 @@ addCont user parser = do
     liftIO $ modifyMVar_ mAll $ \allConts -> do
         let (lock, mUser) = allConts M.! user
 
-<<<<<<< HEAD
-    helpCmd m token uid = do
-        let hm = mconcat [ "/start - Start receving news", "\n",
-                           "/stop  - Stop receiving news", "\n",
-                           "/threshold num - Set threshold for the news to receive", "\n",
-                           "/top3 - Sends you the top3", "\n",
-                           "/top5 - Sends you the top5", "\n",
-                           "/top10 - Sends you the top10"]
-        sendMessage m token uid hm
-
-    changeThreshold conn uid chunks = do
-        if length chunks > 1
-            then do
-                let t = (read $ chunks !! 1) :: Int
-                R.runRedis conn $ do
-                    (Right u) <- R.get (C.pack $ show uid)
-                    case u of
-                        Just _ -> R.set (C.pack $ show uid) (C.pack $ show t) >> return ()
-                        Nothing -> return ()
-            else
-                return ()
-
-    topN m token state uid n = do
-        ids <- fmap botTop $ readMVar state
-        sendStory m token userId story) diff
-        mapM_ (\s -> HN.getStory m s >>= sendStory m token uid) $ take n ids
-=======
         modifyMVar_ mUser $ \userConts ->
             return $ userConts ++ [parser]
 
         return $ M.insert user (lock, mUser) allConts
->>>>>>> rewrite
 
 server :: Bot ()
 server = do
@@ -236,19 +200,11 @@ handler' :: String -> Bot ()
 handler' n = do
     queue <- getQueue
 
-<<<<<<< HEAD
-    req <- parseUrl url
-    r <- try $ httpNoBody req m
-    case r of
-        Left (ex :: SomeException) -> print ex
-        Right _  -> return ()
-=======
     forever $ do
         Message _ user content <- liftIO $ readChan queue
         case content of
             Just text -> do
                 liftIO $ print $ n ++ " : " ++ text
->>>>>>> rewrite
 
                 mAll <- getConts
 
@@ -264,18 +220,12 @@ handler' n = do
 
             Nothing   -> return ()
 
-<<<<<<< HEAD
-        mapM_ (process m token newTop oldTop bot) users
-        modifyMVar_ (botState bot) $ \state -> do
-            return $ state { botTop = newTop, botCache = M.empty }
-=======
   where
     handleText :: String -> User -> Bot ()
     handleText text user = do
         cmds <- getCommands
         let parsers = map cmdParser cmds
         let parser  = P.choice $ map P.try parsers
->>>>>>> rewrite
 
         P.runParserT parser user "" text
         return ()
@@ -287,15 +237,9 @@ handler' n = do
     runConts text user [] = do
         handleText text user
 
-<<<<<<< HEAD
-    process m token newTop oldTop bot (uid, t) = do
-        newsSent <- fmap botNewsSent (readMVar $ botState bot)
-        cache    <- fmap botCache    (readMVar $ botState bot)
-=======
     delCont user = do
         mAll <- getConts
         allConts <- liftIO $ takeMVar mAll
->>>>>>> rewrite
 
         let (_, mUser) = allConts M.! user
 
@@ -310,27 +254,10 @@ send text = do
     u <- P.getState
     lift $ send' text u
 
-<<<<<<< HEAD
-            mapM_ (\i -> do
-                story <- if M.member i cache
-                    then return $ cache M.! i
-                    else do
-                        story <- HN.getStory m i
-                        let updatedCache = M.insert i story cache
-
-                        modifyMVar_ (botState bot) $ \state -> do
-                            return $ state { botCache = updatedCache }
-
-                        return story
-
-                sendStory m token userId story) diff
-
-=======
 send' :: String -> User -> Bot ()
 send' text u@(User uid) = do
     m     <- getManager
     token <- getToken
->>>>>>> rewrite
 
     let baseUrl = "https://api.telegram.org/bot"
     let payload = urlEncodeVars [("chat_id", (show uid)),
