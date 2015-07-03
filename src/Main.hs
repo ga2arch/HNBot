@@ -64,8 +64,6 @@ ancor cache = do
     m <- getManager
 
     forever $ do
-
-        Cache {..} <- liftIO $ readMVar cache
         temp <- liftIO $ getTopStories m
 
         case temp of
@@ -73,6 +71,8 @@ ancor cache = do
                 users <- getUsers
 
                 forM_ users $ \(user, tbyte) -> do
+                    Cache {..} <- liftIO $ readMVar cache
+
                     let threshold = read $ C.unpack tbyte
                     let tOldTop = take threshold cacheIds
                     let tNewTop = take threshold newTop
