@@ -68,32 +68,34 @@ ancor cache = do
 
         case temp of
             Just newTop -> do
+                Cache {..} <- liftIO $ readMVar cache
                 users <- getUsers
 
-                forM_ users $ \(user, tbyte) -> do
-                    Cache {..} <- liftIO $ readMVar cache
+                sent <- foldM (process newTop cacheIds)
+                    cacheAlreadySent users
 
-                    let threshold = read $ C.unpack tbyte
-                    let tOldTop = take threshold cacheIds
-                    let tNewTop = take threshold newTop
-
-                    let sent = if user `M.member` cacheAlreadySent
-                        then cacheAlreadySent M.! user
-                        else []
-
-                    let diff = (tNewTop \\ tOldTop) \\ sent
-                    sendStories' cache diff user
-
-                    liftIO $ modifyMVar_ cache $ \c ->
-                        return $ c {
-                            cacheIds = newTop
-                        ,   cacheAlreadySent =
-                                M.insert user (sent ++ diff) cacheAlreadySent
-                        }
+                liftIO $ modifyMVar_ cache $ \c ->
+                    return $ c {
+                        cacheIds = newTop
+                    ,   cacheAlreadySent = sent
+                    }
 
             Nothing -> return ()
         liftIO $ threadDelay $ 60 * 1000 * 1000
         return ()
+  where
+    process newTop oldTop alreadySent (user, tbyte) = do
+        let threshold = read $ C.unpack tbyte
+            tOldTop = take threshold oldTop
+            tNewTop = take threshold newTop
+
+        let sent = if user `M.member` alreadySent
+            then alreadySent M.! user
+            else []
+
+        let diff = (tNewTop \\ tOldTop) \\ sent
+        sendStories' cache diff user
+        return $ M.insert user (sent ++ diff) alreadySent
 
 getStory' m cache sid =
     liftIO $ modifyMVar cache $ \c@(Cache {..}) -> do
