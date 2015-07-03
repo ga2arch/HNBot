@@ -26,14 +26,15 @@ import qualified Database.Redis as R
 data Cache = Cache {
     cacheStories :: M.Map Int Story
 ,   cacheIds     :: [Int]
-,   cacheAlreadySent :: [Int]
+,   cacheAlreadySent :: M.Map User [Int]
 }
 
 helpCmd = do
     P.string "/help"
-    send "/top3  get the top 3"
-    send "/top5  get the top 5"
-    send "/top10 get the top 10"
+
+    let msg = ["/top3", "/top5", "/top10", "/threshold - Sets the news threshold"]
+
+    send $ mconcat $ intersperse "\n" msg
 
 topN n cache = do
     P.string $ "/top" ++ show n
@@ -45,7 +46,7 @@ topN n cache = do
 threshold = do
     P.string $ "/threshold"
 
-    send "Threshold: "
+    send "Gimme a threshold: "
 
     next $ do
         t <- read <$> P.many1 P.digit
@@ -54,37 +55,40 @@ threshold = do
             User uid <- P.getState
 
             liftIO $ R.runRedis conn $ do
-                Right u <- R.get $ C.pack . show $ uid
-                case u of
-                    Just _ ->
-                        R.set (C.pack $ show uid) (C.pack $ show t)
-                        >> return ()
-                    Nothing -> return ()
+                R.set (C.pack $ show uid) (C.pack $ show t)
+                return ()
+
+            send "Ok"
 
 ancor cache = do
     m <- getManager
-    users <- getUsers
 
     forever $ do
+
         Cache {..} <- liftIO $ readMVar cache
         temp <- liftIO $ getTopStories m
 
         case temp of
-            Just newTop ->
+            Just newTop -> do
+                users <- getUsers
+
                 forM_ users $ \(user, tbyte) -> do
                     let threshold = read $ C.unpack tbyte
                     let tOldTop = take threshold cacheIds
                     let tNewTop = take threshold newTop
 
-                    let diff = (tNewTop \\ tOldTop) \\ cacheAlreadySent
-                    mapM_ (\i -> do
-                        s <- getStory' m cache i
-                        (flip send') user . title . fromJust $ s) diff
+                    let sent = if user `M.member` cacheAlreadySent
+                        then cacheAlreadySent M.! user
+                        else []
+
+                    let diff = (tNewTop \\ tOldTop) \\ sent
+                    sendStories' cache diff user
 
                     liftIO $ modifyMVar_ cache $ \c ->
                         return $ c {
                             cacheIds = newTop
-                        ,   cacheAlreadySent = cacheAlreadySent ++ diff
+                        ,   cacheAlreadySent =
+                                M.insert user (sent ++ diff) cacheAlreadySent
                         }
 
             Nothing -> return ()
@@ -103,13 +107,25 @@ getStory' m cache sid =
                         return (c { cacheStories = nStories }, story)
                     Nothing -> return (c, Nothing)
 
+
 sendStories cache ids = do
-    m <- lift $ getManager
+    u <- P.getState
+    lift $ sendStories' cache ids u
+
+sendStories' cache ids u = do
+    m <- getManager
+
     mapM_ (\i -> do
         s <- getStory' m cache i
-        sendStory s) ids
+        sendStory s u) ids
   where
-      sendStory = send . title . fromJust
+      sendStory (Just (Story sid title url)) u = do
+          let msg = title ++ "\n\n" ++ url ++ "\n\n"
+                    ++ "https://news.ycombinator.com/item?id=" ++ (show sid)
+
+          send' msg u
+
+      sendStory Nothing _ = return ()
 
 main = do
     conn <- connect defaultConnectInfo
@@ -119,7 +135,7 @@ main = do
         let config = BotConfig 8080 token manager conn
 
         ids <- fmap fromJust $ getTopStories manager
-        cache <- newMVar $ Cache M.empty ids []
+        cache <- newMVar $ Cache M.empty ids M.empty
 
         runBot config $ do
             addCmd helpCmd
