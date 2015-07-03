@@ -3,6 +3,7 @@
 module HackerNews where
 
 import Data.Monoid
+import Data.Maybe
 import Data.Default
 import Data.Aeson
 import GHC.Generics
@@ -36,5 +37,5 @@ getStory m sid = makeReq m $ "item/" <> (show sid) <> ".json"
 getTopStories :: Manager -> IO (Maybe [Int])
 getTopStories m = makeReq m "topstories.json"
 
-getTop10 :: Manager -> IO (Maybe [Int])
-getTop10 m = fmap (fmap $ take 10) $ getTopStories m
+getTopN :: Manager -> Int -> IO [Int]
+getTopN m n = fmap (take n . fromJust) $ getTopStories m
