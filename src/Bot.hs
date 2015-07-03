@@ -185,12 +185,14 @@ server = do
                 return $ M.insert user (l, e) m
 
 handler :: String -> Bot ()
-handler n = do
+handler n = runAsync $ handler' n
+
+runAsync f = do
     config <- ask
     state  <- get
 
     liftIO . async $
-        evalStateT (runReaderT (unBot $ handler' n) config) state
+        evalStateT (runReaderT (unBot f) config) state
     return ()
 
 handler' :: String -> Bot ()
