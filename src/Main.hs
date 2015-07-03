@@ -27,25 +27,27 @@ helpCmd = do
     P.string "/help"
     send "/top3 get the top 3"
 
-top3 cache = do
-    P.string "/top3"
+topN n cache = do
+    P.string $ "/top" ++ show n
 
     m <- lift $ getManager
-    ids <- liftIO $ getTopN m 3
-    stories <- liftIO $ mapM (getStory' m cache) ids
-
-    mapM_ (send . title. fromJust) stories
+    ids <- liftIO $ getTopN m n
+    mapM_ ((>>= sendStory) . getStory' m cache) ids
+    
   where
-    getStory' m cache sid = modifyMVar cache $ \(Cache stories) -> do
-        if sid `M.member` stories
-            then return (Cache stories, Just $ stories M.! sid)
-            else do
-                story <- getStory m sid
-                case story of
-                    Just s -> do
-                        let nStories = M.insert sid s stories
-                        return (Cache nStories, story)
-                    Nothing -> return (Cache stories, Nothing)
+    getStory' m cache sid =
+        liftIO $ modifyMVar cache $ \(Cache stories) -> do
+            if sid `M.member` stories
+                then return (Cache stories, Just $ stories M.! sid)
+                else do
+                    story <- getStory m sid
+                    case story of
+                        Just s -> do
+                            let nStories = M.insert sid s stories
+                            return (Cache nStories, story)
+                        Nothing -> return (Cache stories, Nothing)
+
+    sendStory = send . title . fromJust
 
 main = do
     conn <- connect defaultConnectInfo
@@ -57,7 +59,10 @@ main = do
 
         runBot config $ do
             addCmd helpCmd
-            addCmd $ top3 cache
+            addCmd $ topN 3 cache
+            addCmd $ topN 5 cache
+            addCmd $ topN 10 cache
+
 
             server
             handler "first"
