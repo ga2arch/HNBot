@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, DeriveGeneric, RecordWildCards,
-             FlexibleContexts #-}
+             FlexibleContexts, ScopedTypeVariables #-}
 module Main where
 
 import Control.Concurrent
@@ -9,12 +9,15 @@ import Control.Exception
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Data.List
-import Data.List.Split (splitOn)
+import Data.String.Utils (replace, endswith)
 import Data.Maybe
 import Data.Time.Clock (getCurrentTime)
 import Database.Redis (connect, defaultConnectInfo)
+import Network.HTTP.Base (urlEncode)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
+import System.Process
+import System.Directory
 
 import Bot
 import HackerNews
@@ -60,6 +63,41 @@ threshold = do
                 return ()
 
             send "Ok"
+
+youtubeDl = do
+    P.manyTill P.anyToken (P.try $ P.string "youtu")
+    (P.try $ P.string ".be/") P.<|> (P.try $ P.string "be.com/watch?v=")
+
+    rest  <- P.many1 P.anyToken
+
+    let url = "https://www.youtube.com/watch?v=" ++ rest
+    liftIO $ print url
+    n <- liftIO $ try $ do
+        t <- fmap init $ readProcess "youtube-dl"
+            ["-x", "--get-filename", url] []
+        return $ if t `endswith` ".webm"
+            then replace ".webm" ".mp3" t
+            else replace ".m4a"  ".mp3" t
+
+    case n of
+        Right name -> do
+            send $ "Fetching " ++ name
+            liftIO $ do
+                o <- getCurrentDirectory
+                p <- makeAbsolute "static/"
+                setCurrentDirectory p
+                readProcess "youtube-dl" ["-x", "--audio-format", "mp3", url] []
+                setCurrentDirectory o
+
+            send $ "http://dogetu.be:8080/static/" ++ urlEncode name
+            --path <- liftIO $ makeAbsolute $ "static/" ++ name
+            --send "Sending song to you"
+            --sendDoc path
+            --liftIO $ removeFile path
+
+        Left (e :: SomeException) -> do
+            liftIO $ print e
+            send "There was an error"
 
 ancor cache = do
     m <- getManager
@@ -136,7 +174,7 @@ sendStories' cache ids u = do
 
 main = do
     conn <- connect defaultConnectInfo
-    token <- fmap (head . splitOn "\n") $ readFile "token"
+    token <- fmap init $ readFile "token"
 
     withManager tlsManagerSettings $ \manager -> do
         let config = BotConfig 8080 token manager conn
@@ -150,6 +188,7 @@ main = do
             addCmd $ topN 5 cache
             addCmd $ topN 10 cache
             addCmd $ threshold
+            addCmd $ youtubeDl
 
             server
             handler "first"

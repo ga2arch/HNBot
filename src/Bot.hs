@@ -12,11 +12,14 @@ import Control.Monad.State
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
+import Data.ByteString.Builder (byteString)
 import Data.Maybe (fromJust)
 import GHC.Generics
 import Network.HTTP.Base (urlEncodeVars)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
+import Network.HTTP.Client.MultipartFormData
+import System.Directory
 
 import qualified Text.Parsec as P
 import qualified Data.Map as M
@@ -24,6 +27,9 @@ import qualified Database.Redis as R
 import qualified Data.ByteString.Char8 as C
 import qualified Web.Scotty as Sc
 import qualified Control.Concurrent.Lock as L
+import qualified System.Posix as SP
+import qualified Data.Text.Lazy as T
+
 
 data User = User {
     id :: Int
@@ -174,6 +180,19 @@ server = do
                         writeChan queue m
                     _ -> return ()
             Sc.html "ok"
+
+        Sc.get "/static/:name" $ do
+            name <- Sc.param "name"
+            path <- liftIO $ makeAbsolute $ "static/" ++ name
+
+            size <- liftIO $ getFileSize path
+            Sc.setHeader "Content-Length" (T.pack $ show size)
+            Sc.stream $ \write flush -> do
+                b <- C.readFile path
+                write $ byteString b
+                flush
+                removeFile path
+
     return ()
   where
     addUser user conts = modifyMVar_ conts $ \m -> do
@@ -183,6 +202,9 @@ server = do
                 l <- L.new
                 e <- newMVar []
                 return $ M.insert user (l, e) m
+
+    getFileSize f = fmap SP.fileSize $ SP.getFileStatus f
+
 
 handler :: String -> Bot ()
 handler n = runAsync $ handler' n
@@ -265,6 +287,26 @@ send' text u@(User uid) = do
     let url = mconcat [baseUrl, token, "/sendMessage?", payload]
 
     req <- parseUrl url
+    r <- liftIO $ try $ httpLbs req m
+    case r of
+        Left (ex :: SomeException) -> liftIO $ print ex
+        Right _  -> return ()
+
+sendDoc file = do
+    u <- P.getState
+    lift $ sendDoc' file u
+
+sendDoc' :: String -> User -> Bot ()
+sendDoc' file (User uid) = do
+    m     <- getManager
+    token <- getToken
+
+    let baseUrl = "https://api.telegram.org/bot"
+        url = mconcat [baseUrl, token, "/sendDocument"]
+
+    req' <- parseUrl url
+    req  <- formDataBody [partBS "chat_id" (C.pack $ show uid)
+                          ,partFileSource "document" file] req'
     r <- liftIO $ try $ httpLbs req m
     case r of
         Left (ex :: SomeException) -> liftIO $ print ex
