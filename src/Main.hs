@@ -11,6 +11,7 @@ import Control.Monad.Trans.Class
 import Data.List
 import Data.List.Split (splitOn)
 import Data.Maybe
+import Data.Time.Clock (getCurrentTime)
 import Database.Redis (connect, defaultConnectInfo)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
@@ -65,6 +66,8 @@ ancor cache = do
 
     forever $ do
         temp <- liftIO $ getTopStories m
+        time <- liftIO $ getCurrentTime
+        liftIO $ putStrLn $ "\n" ++ show time ++ "\n === Checking news ==="
 
         case temp of
             Just newTop -> do
@@ -81,6 +84,7 @@ ancor cache = do
                     }
 
             Nothing -> return ()
+
         liftIO $ threadDelay $ 60 * 1000 * 1000
         return ()
   where
@@ -94,6 +98,7 @@ ancor cache = do
             else []
 
         let diff = (tNewTop \\ tOldTop) \\ sent
+        liftIO $ putStrLn $ show user ++ " " ++ show diff
         sendStories' cache diff user
         return $ M.insert user (sent ++ diff) alreadySent
 
@@ -150,7 +155,7 @@ main = do
             handler "first"
             handler "second"
 
-            runAsync $ ancor cache
+            ancor cache
 
-    forever $ threadDelay maxBound
+    --forever $ threadDelay maxBound
     return ()

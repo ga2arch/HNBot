@@ -1,7 +1,8 @@
-{-# LANGUAGE OverloadedStrings, DeriveGeneric,
+{-# LANGUAGE OverloadedStrings, DeriveGeneric, ScopedTypeVariables,
              FlexibleInstances, GeneralizedNewtypeDeriving #-}
 module HackerNews where
 
+import Control.Exception
 import Data.Monoid
 import Data.Maybe
 import Data.Default
@@ -25,11 +26,12 @@ makeReq m url = do
     let baseUrl = "https://hacker-news.firebaseio.com/v0/"
     req <- parseUrl $ baseUrl <> url
 
-    withResponse req m $ \resp -> do
-        body <- brConsume $ responseBody resp
-        case (eitherDecode $ BSL.fromChunks body) of
-            Left err -> return Nothing
+    resp <- try $ httpLbs req m
+    case resp of
+        Right body -> case (eitherDecode $ responseBody body) of
+            Left e -> print e >> return Nothing
             Right d  -> return $ Just d
+        Left (e :: SomeException) -> print e >> return Nothing
 
 getStory :: Manager -> Int -> IO (Maybe Story)
 getStory m sid = makeReq m $ "item/" <> (show sid) <> ".json"
