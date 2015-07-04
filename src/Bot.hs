@@ -186,13 +186,15 @@ server = do
             path <- liftIO $ makeAbsolute $ "static/" ++ name
 
             size <- liftIO $ getFileSize path
+            Sc.setHeader "Content-Type" "application/force-download"
             Sc.setHeader "Content-Length" (T.pack $ show size)
-            Sc.stream $ \write flush -> do
-                b <- C.readFile path
-                write $ byteString b
-                flush
-                removeFile path
 
+            b <- liftIO $ C.readFile path
+            Sc.stream $ \write flush ->
+                ((write $ byteString b) >> flush)
+                    `finally` removeFile path
+
+            return ()
     return ()
   where
     addUser user conts = modifyMVar_ conts $ \m -> do

@@ -75,7 +75,7 @@ youtubeDl = do
     n <- liftIO $ try $ do
         t <- fmap init $ readProcess "youtube-dl"
             ["-x", "--get-filename", url] []
-        return $ if t `endswith` ".webm"
+        return $ if endswith ".webm" t
             then replace ".webm" ".mp3" t
             else replace ".m4a"  ".mp3" t
 
