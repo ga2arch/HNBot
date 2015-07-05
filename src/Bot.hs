@@ -70,7 +70,7 @@ data Cmd = Cmd {
     cmdParser :: P.ParsecT String User Bot ()
 }
 
-data BotState = forall a. BotState {
+data BotState = BotState {
     botCommands    :: [Cmd]
 ,   botQueue       :: Chan Message
 ,   botConts       :: MVar (M.Map User (L.Lock, MVar [P.ParsecT String User Bot ()]))
@@ -160,7 +160,8 @@ server = do
 
                 let (Update _ message) = update
                 case message of
-                    Just m@(Message _ _ chat (Just text)) -> do
+                    Just m@Message { chat = chat,
+                                     text = (Just _) } -> do
                         addUser chat conts
                         writeChan queue m
                     _ -> return ()
@@ -172,14 +173,6 @@ server = do
 
             Sc.setHeader "Content-Type" "application/force-download"
             Sc.file path
-            -- size <- liftIO $ getFileSize path
-            -- Sc.setHeader "Content-Type" "application/force-download"
-            -- Sc.setHeader "Content-Length" (T.pack $ show size)
-            --
-            -- b <- liftIO $ C.readFile path
-            -- Sc.stream $ \write flush ->
-            --     ((write $ byteString b) >> flush)
-            --         --`finally` removeFile path
 
     return ()
   where
