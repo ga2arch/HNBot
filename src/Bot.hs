@@ -30,7 +30,6 @@ import qualified Control.Concurrent.Lock as L
 import qualified System.Posix as SP
 import qualified Data.Text.Lazy as T
 
-
 data User = User {
     id :: Int
 } deriving (Show, Generic, Ord, Eq)
@@ -41,6 +40,7 @@ instance ToJSON   User
 data Message = Message {
     message_id :: Int
 ,   from :: User
+,   chat :: User
 ,   text :: Maybe String
 } deriving (Show, Generic)
 
@@ -160,8 +160,8 @@ server = do
 
                 let (Update _ message) = update
                 case message of
-                    Just m@(Message _ user (Just text)) -> do
-                        addUser user conts
+                    Just m@(Message _ _ chat (Just text)) -> do
+                        addUser chat conts
                         writeChan queue m
                     _ -> return ()
             Sc.html "ok"
@@ -210,7 +210,7 @@ handler' n = do
     queue <- getQueue
 
     forever $ do
-        Message _ user content <- liftIO $ readChan queue
+        Message _ _ user content <- liftIO $ readChan queue
         case content of
             Just text -> do
                 liftIO $ print $ n ++ " : " ++ text

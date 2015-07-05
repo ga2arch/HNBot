@@ -67,19 +67,33 @@ threshold = do
             send "Ok"
 
 downloadAndSend name url = do
-    liftIO $ do
+    (o, p) <- liftIO $ do
         o <- getCurrentDirectory
         p <- makeAbsolute "static/"
         setCurrentDirectory p
-        readProcess "youtube-dl" ["-x", "--audio-format", "mp3", url] []
-        setCurrentDirectory o
-        async $ do
-            threadDelay $ 60 * 1000 * 1000
-            removeFile $ p ++ name
 
-    path <- liftIO $ makeAbsolute $ "static/" ++ name
-    sendDoc path
-    send $ "http://dogetu.be:8080/static/" ++ urlEncode name
+        return (o, p)
+
+    res <- liftIO $ try $
+            readProcess "youtube-dl" ["-x", "--audio-format", "mp3", url] []
+
+    liftIO $ setCurrentDirectory o
+
+    case res of
+        Left (e :: SomeException) -> do
+            liftIO $ print e
+            send "There was an error"
+
+        Right _ -> do
+            liftIO $ do
+                setCurrentDirectory o
+                async $ do
+                    threadDelay $ 60 * 1000 * 1000
+                    removeFile $ p ++ name
+
+            path <- liftIO $ makeAbsolute $ "static/" ++ name
+            sendDoc path
+            send $ "http://dogetu.be:8080/static/" ++ urlEncode name
 
 getYUrlFilename url =
     liftIO $ try $ do
@@ -113,7 +127,7 @@ youtubeDl = do
     liftIO $ print url
 
     n <- getYUrlFilename url
- 
+
     case n of
         Right name -> do
             send $ "Fetching " ++ name
