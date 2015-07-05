@@ -22,7 +22,7 @@ executable hnbot
   build-depends:       base >=4.8 && <4.9, http-client,
                        http-client-tls, aeson, bytestring,
                        async, data-default, scotty, transformers,
-                       hedis, mtl, containers, HTTP,
+                       hedis, mtl, containers, HTTP, random,
                        parsec, exceptions, concurrent-extra, time,
                        process, directory, MissingH, unix, text
   ghc-options:         -threaded

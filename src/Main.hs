@@ -19,6 +19,7 @@ import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 import System.Process
 import System.Directory
+import System.Random (randomRIO)
 
 import Bot
 import HackerNews
@@ -65,6 +66,43 @@ threshold = do
 
             send "Ok"
 
+downloadAndSend name url = do
+    liftIO $ do
+        o <- getCurrentDirectory
+        p <- makeAbsolute "static/"
+        setCurrentDirectory p
+        readProcess "youtube-dl" ["-x", "--audio-format", "mp3", url] []
+        setCurrentDirectory o
+        async $ do
+            threadDelay $ 60 * 1000 * 1000
+            removeFile $ p ++ name
+
+    path <- liftIO $ makeAbsolute $ "static/" ++ name
+    sendDoc path
+    send $ "http://dogetu.be:8080/static/" ++ urlEncode name
+
+getYUrlFilename url =
+    liftIO $ try $ do
+        t <- fmap init $ readProcess "youtube-dl"
+            ["-x", "--get-filename", url] []
+        return $ if endswith ".webm" t
+            then replace ".webm" ".mp3" t
+            else replace ".m4a"  ".mp3" t
+
+bombz = do
+    P.string "/bombz"
+
+    songs <- liftIO $ fmap read $ readFile "songs"
+    n <- liftIO $ randomRIO (0, (length songs - 1))
+    let url = songs !! n
+
+    t <- getYUrlFilename url
+    case t of
+        Right name -> do
+            send $ "Fetching " ++ name
+            downloadAndSend name url
+        Left (e :: SomeException) -> send "There was an error"
+
 youtubeDl = do
     P.manyTill P.anyToken (P.try $ P.string "youtu")
     (P.try $ P.string ".be/") P.<|> (P.try $ P.string "be.com/watch?v=")
@@ -73,32 +111,13 @@ youtubeDl = do
 
     let url = "https://www.youtube.com/watch?v=" ++ rest
     liftIO $ print url
-    n <- liftIO $ try $ do
-        t <- fmap init $ readProcess "youtube-dl"
-            ["-x", "--get-filename", url] []
-        return $ if endswith ".webm" t
-            then replace ".webm" ".mp3" t
-            else replace ".m4a"  ".mp3" t
 
+    n <- getYUrlFilename url
+ 
     case n of
         Right name -> do
             send $ "Fetching " ++ name
-            liftIO $ do
-                o <- getCurrentDirectory
-                p <- makeAbsolute "static/"
-                setCurrentDirectory p
-                readProcess "youtube-dl" ["-x", "--audio-format", "mp3", url] []
-                setCurrentDirectory o
-                async $ do
-                    threadDelay $ 20 * 1000 * 1000
-                    removeFile $ p ++ name
-
-            send $ "http://dogetu.be:8080/static/" ++ urlEncode name
-
-            --path <- liftIO $ makeAbsolute $ "static/" ++ name
-            --send "Sending song to you"
-            --sendDoc path
-            --liftIO $ removeFile path
+            downloadAndSend name url
 
         Left (e :: SomeException) -> do
             liftIO $ print e
@@ -192,8 +211,9 @@ main = do
             addCmd $ topN 3 cache
             addCmd $ topN 5 cache
             addCmd $ topN 10 cache
-            addCmd $ threshold
-            addCmd $ youtubeDl
+            addCmd threshold
+            addCmd youtubeDl
+            addCmd bombz
 
             server
             handler "first"
