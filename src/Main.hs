@@ -3,9 +3,10 @@
 module Main where
 
 import Control.Concurrent
-import Control.Monad
+import Control.Concurrent.Async
 import Control.Concurrent.MVar
 import Control.Exception
+import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Data.List
@@ -88,8 +89,12 @@ youtubeDl = do
                 setCurrentDirectory p
                 readProcess "youtube-dl" ["-x", "--audio-format", "mp3", url] []
                 setCurrentDirectory o
+                async $ do
+                    threadDelay $ 20 * 1000 * 1000
+                    removeFile $ p ++ name
 
             send $ "http://dogetu.be:8080/static/" ++ urlEncode name
+
             --path <- liftIO $ makeAbsolute $ "static/" ++ name
             --send "Sending song to you"
             --sendDoc path

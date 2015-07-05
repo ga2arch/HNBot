@@ -125,21 +125,6 @@ getUsers = do
     toInt :: C.ByteString -> Int
     toInt = read . C.unpack
 
--- withCache :: (forall a. a -> Bot (a, b)) -> Bot b
--- withCache f = do
---     d <- get
---     withCache' d f
---   where
---       withCache' :: BotState -> (forall a. a -> Bot (a, b)) -> Bot b
---       withCache' (BotState m _ _ _) f = do
---           mask $ \restore -> do
---               cache <- liftIO $ takeMVar m :: Bot a
---               (newCache :: a, result) <- restore (f cache)
---                 `onException` (liftIO $ putMVar m cache)
---               liftIO $ putMVar m newCache
---               return result
-
---addCmd :: Cmd -> Bot ()
 addCmd cmd = do
     s <- get
     let cmds = botCommands s
@@ -185,16 +170,17 @@ server = do
             name <- Sc.param "name"
             path <- liftIO $ makeAbsolute $ "static/" ++ name
 
-            size <- liftIO $ getFileSize path
             Sc.setHeader "Content-Type" "application/force-download"
-            Sc.setHeader "Content-Length" (T.pack $ show size)
+            Sc.file path
+            -- size <- liftIO $ getFileSize path
+            -- Sc.setHeader "Content-Type" "application/force-download"
+            -- Sc.setHeader "Content-Length" (T.pack $ show size)
+            --
+            -- b <- liftIO $ C.readFile path
+            -- Sc.stream $ \write flush ->
+            --     ((write $ byteString b) >> flush)
+            --         --`finally` removeFile path
 
-            b <- liftIO $ C.readFile path
-            Sc.stream $ \write flush ->
-                ((write $ byteString b) >> flush)
-                    `finally` removeFile path
-
-            return ()
     return ()
   where
     addUser user conts = modifyMVar_ conts $ \m -> do
