@@ -230,8 +230,8 @@ main = do
             addCmd bombz
 
             server
-            handler "first"
-            handler "second"
+            runAsync $ handler "first"
+            runAsync $ handler "second"
 
             ancor cache
 

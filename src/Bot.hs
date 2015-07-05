@@ -161,7 +161,7 @@ server = do
                 let (Update _ message) = update
                 case message of
                     Just m@Message { chat = chat,
-                                     text = (Just _) } -> do
+                                     text = Just _ } -> do
                         addUser chat conts
                         writeChan queue m
                     _ -> return ()
@@ -184,12 +184,7 @@ server = do
                 e <- newMVar []
                 return $ M.insert user (l, e) m
 
-    getFileSize f = fmap SP.fileSize $ SP.getFileStatus f
-
-
-handler :: String -> Bot ()
-handler n = runAsync $ handler' n
-
+runAsync :: Bot a -> Bot ()
 runAsync f = do
     config <- ask
     state  <- get
@@ -198,29 +193,27 @@ runAsync f = do
         evalStateT (runReaderT (unBot f) config) state
     return ()
 
-handler' :: String -> Bot ()
-handler' n = do
+handler :: String -> Bot ()
+handler n = do
     queue <- getQueue
 
     forever $ do
-        Message _ _ user content <- liftIO $ readChan queue
-        case content of
-            Just text -> do
-                liftIO $ print $ n ++ " : " ++ text
+        Message { chat = user,
+                  text = Just text } <- liftIO $ readChan queue
+                  
+        liftIO $ print $ n ++ " : " ++ text
 
-                mAll <- getConts
+        mAll <- getConts
 
-                (lock, userConts) <- liftIO $ modifyMVar mAll $ \allConts -> do
-                    let (lock, mUser) = allConts M.! user
-                    L.acquire lock
+        (lock, userConts) <- liftIO $ modifyMVar mAll $ \allConts -> do
+            let (lock, mUser) = allConts M.! user
+            L.acquire lock
 
-                    userConts <- liftIO $ readMVar mUser
-                    return (allConts, (lock, userConts))
+            userConts <- liftIO $ readMVar mUser
+            return (allConts, (lock, userConts))
 
-                runConts text user userConts
-                    `finally` (liftIO $ L.release lock)
-
-            Nothing   -> return ()
+        runConts text user userConts
+            `finally` (liftIO $ L.release lock)
 
   where
     handleText :: String -> User -> Bot ()
