@@ -55,7 +55,7 @@ runBot config f = do
     conts <- newMVar M.empty
 
     let state = BotState [] queue conts
-    evalStateT (runReaderT (unBot f) config) state
+    evalStateT (runReaderT (unBot $ server >> f) config) state
 
 getPort :: Bot Int
 getPort = asks botPort
