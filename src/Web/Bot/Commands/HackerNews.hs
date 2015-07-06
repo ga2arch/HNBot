@@ -31,15 +31,16 @@ import qualified Text.Parsec as P
 import qualified Data.ByteString.Char8 as C
 import qualified Data.Acid as A
 
-data Database = Database [(Int, Int)]
+data Database = Database [(User, Int)]
+$(deriveSafeCopy 0 'base ''User)
 $(deriveSafeCopy 0 'base ''Database)
 
-addUser :: Int -> Int -> A.Update Database ()
-addUser uid t = do
+addUser :: User -> Int -> A.Update Database ()
+addUser user t = do
     Database users <- get
-    put $ Database ((uid, t) : users)
+    put $ Database ((user, t) : users)
 
-viewUsers :: A.Query Database [(Int, Int)]
+viewUsers :: A.Query Database [(User, Int)]
 viewUsers = do
     Database users <- ask
     return users
@@ -69,9 +70,9 @@ threshold db = do
     next $ do
         t <- read <$> P.many1 P.digit
         when (t <= 20) $ do
-            User uid <- P.getState
+            user <- P.getState
 
-            liftIO $ A.update db (AddUser uid t)
+            liftIO $ A.update db (AddUser user t)
 
             send "Ok"
 
@@ -108,10 +109,9 @@ ancor cache db = do
         liftIO $ threadDelay $ 60 * 1000 * 1000
         return ()
   where
-    process newTop oldTop alreadySent (uid, threshold) = do
+    process newTop oldTop alreadySent (user, threshold) = do
         let tOldTop = take threshold oldTop
             tNewTop = take threshold newTop
-            user = User uid
 
         let sent = if user `M.member` alreadySent
             then alreadySent M.! user
