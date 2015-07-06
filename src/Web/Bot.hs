@@ -1,16 +1,13 @@
-{-# LANGUAGE OverloadedStrings, DeriveGeneric, ScopedTypeVariables,
-             FlexibleContexts, GeneralizedNewtypeDeriving,
-             RankNTypes, ExistentialQuantification #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, FlexibleContexts  #-}
+
 module Web.Bot
         ( runBot
         , runAsync
         , getPort
         , getToken
         , getManager
-        , getDbConn
         , getQueue
         , getCommands
-        , getUsers
         , addCmd
         , addCont
 
@@ -36,10 +33,7 @@ import Control.Monad.State
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
-import Data.ByteString.Builder (byteString)
 import Data.Maybe (fromJust)
-import GHC.Generics
-import Network.HTTP.Base (urlEncodeVars)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 import Network.HTTP.Client.MultipartFormData
@@ -47,7 +41,6 @@ import System.Directory
 
 import qualified Text.Parsec as P
 import qualified Data.Map as M
-import qualified Database.Redis as R
 import qualified Data.ByteString.Char8 as C
 import qualified Web.Scotty as Sc
 import qualified Control.Concurrent.Lock as L
@@ -62,7 +55,7 @@ runBot config f = do
     conts <- newMVar M.empty
 
     let state = BotState [] queue conts
-    evalStateT (runReaderT (unBot (server >> f)) config) state
+    evalStateT (runReaderT (unBot f) config) state
 
 getPort :: Bot Int
 getPort = asks botPort
@@ -73,9 +66,6 @@ getToken = asks botToken
 getManager :: Bot Manager
 getManager = asks botManager
 
-getDbConn :: Bot R.Connection
-getDbConn = asks botDbConn
-
 getQueue :: Bot (Chan Message)
 getQueue = gets botQueue
 
@@ -83,27 +73,6 @@ getCommands :: Bot [Cmd]
 getCommands = gets botCommands
 
 getConts = gets botConts
-
-getUsers :: Bot [(User, C.ByteString)]
-getUsers = do
-    conn <- getDbConn
-    users <- liftIO $ R.runRedis conn $ do
-        ks <- query
-        mapM userData ks
-
-    return users
-  where
-    query = do
-        Right ks <- R.keys "*"
-        return ks
-
-    userData k = do
-        Right t <- R.get k
-        return (User . toInt $ k,
-                fromJust t)
-
-    toInt :: C.ByteString -> Int
-    toInt = read . C.unpack
 
 addCmd :: Parser -> Bot ()
 addCmd cmd = do

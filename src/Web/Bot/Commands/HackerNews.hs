@@ -1,17 +1,27 @@
 {-# LANGUAGE OverloadedStrings, RecordWildCards, FlexibleContexts #-}
-module Web.Bot.Commands.HackerNews where
+{-# LANGUAGE TypeFamilies, DeriveDataTypeable, TemplateHaskell #-}
+
+module Web.Bot.Commands.HackerNews
+        ( topN
+        , threshold
+        , ancor
+        , Cache (..)
+        , Database (..)
+        ) where
 
 import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.MVar
 import Control.Exception
 import Control.Monad
+import Control.Monad.State                   ( get, put )
+import Control.Monad.Reader                  ( ask )
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Data.List
 import Data.Time.Clock (getCurrentTime)
 import Data.Maybe
-import Database.Redis (connect, defaultConnectInfo)
+import Data.SafeCopy
 
 import Web.Bot
 import Web.HackerNews
@@ -19,13 +29,30 @@ import Web.HackerNews
 import qualified Data.Map as M
 import qualified Text.Parsec as P
 import qualified Data.ByteString.Char8 as C
-import qualified Database.Redis as R
+import qualified Data.Acid as A
+
+data Database = Database [(Int, Int)]
+$(deriveSafeCopy 0 'base ''Database)
+
+addUser :: Int -> Int -> A.Update Database ()
+addUser uid t = do
+    Database users <- get
+    put $ Database ((uid, t) : users)
+
+viewUsers :: A.Query Database [(Int, Int)]
+viewUsers = do
+    Database users <- ask
+    return users
+
+$(A.makeAcidic ''Database ['addUser, 'viewUsers])
 
 data Cache = Cache {
-    cacheStories :: M.Map Int Story
-,   cacheIds     :: [Int]
+    cacheStories     :: M.Map Int Story
+,   cacheIds         :: [Int]
 ,   cacheAlreadySent :: M.Map User [Int]
 }
+
+getUsers db = liftIO $ A.query db ViewUsers
 
 topN n cache = do
     P.string $ "/top" ++ show n
@@ -34,24 +61,21 @@ topN n cache = do
     ids <- liftIO $ getTopN m n
     sendStories cache ids
 
-threshold = do
-    P.string $ "/threshold"
+threshold db = do
+    P.string "/threshold"
 
     send "Gimme a threshold: "
 
     next $ do
         t <- read <$> P.many1 P.digit
         when (t <= 20) $ do
-            conn <- lift $ getDbConn
             User uid <- P.getState
 
-            liftIO $ R.runRedis conn $ do
-                R.set (C.pack $ show uid) (C.pack $ show t)
-                return ()
+            liftIO $ A.update db (AddUser uid t)
 
             send "Ok"
 
-ancor cache = do
+ancor cache db = do
     m <- getManager
 
     ids <- liftIO $ fmap fromJust $ getTopStories m
@@ -68,7 +92,7 @@ ancor cache = do
         case temp of
             Just newTop -> do
                 Cache {..} <- liftIO $ readMVar cache
-                users <- getUsers
+                users <- getUsers db
 
                 sent <- foldM (process newTop cacheIds)
                     cacheAlreadySent users
@@ -84,10 +108,10 @@ ancor cache = do
         liftIO $ threadDelay $ 60 * 1000 * 1000
         return ()
   where
-    process newTop oldTop alreadySent (user, tbyte) = do
-        let threshold = read $ C.unpack tbyte
-            tOldTop = take threshold oldTop
+    process newTop oldTop alreadySent (uid, threshold) = do
+        let tOldTop = take threshold oldTop
             tNewTop = take threshold newTop
+            user = User uid
 
         let sent = if user `M.member` alreadySent
             then alreadySent M.! user

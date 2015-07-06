@@ -5,6 +5,7 @@ module Web.Bot.Commands
         , threshold
         , ancor
         , Cache (..)
+        , Database (..)
 
         , youtube
         , bombz

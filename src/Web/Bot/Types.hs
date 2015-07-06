@@ -9,12 +9,10 @@ import Control.Monad.State
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
-import Database.Redis (connect, defaultConnectInfo)
 import GHC.Generics
 import Network.HTTP.Client
 
 import qualified Control.Concurrent.Lock as L
-import qualified Database.Redis as R
 import qualified Data.Map    as M
 import qualified Text.Parsec as P
 
@@ -51,7 +49,6 @@ data BotConfig = BotConfig {
     botPort    :: Int
 ,   botToken   :: String
 ,   botManager :: Manager
-,   botDbConn  :: R.Connection
 }
 
 type Parser = P.ParsecT String User Bot ()
@@ -63,5 +60,5 @@ data Cmd = Cmd {
 data BotState = BotState {
     botCommands    :: [Cmd]
 ,   botQueue       :: Chan Message
-,   botConts       :: MVar (M.Map User (L.Lock, MVar [P.ParsecT String User Bot ()]))
+,   botConts       :: MVar (M.Map User (L.Lock, MVar [Parser]))
 }
