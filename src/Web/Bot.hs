@@ -253,9 +253,9 @@ send text = do
     lift $ send' text u
 
 send' :: String -> User -> Bot ()
-send' text u@(User uid) = do
+send' text (User uid) = do
     call "sendMessage" [ partBS "chat_id" (C.pack $ show uid)
-                       , partBS "text" (C.pack text)
+                       , partBS "text"    (C.pack text)
                        , partBS "disable_web_page_preview" "true"]
 
 sendDoc :: FilePath -> Parser
@@ -266,4 +266,4 @@ sendDoc file = do
 sendDoc' :: FilePath -> User -> Bot ()
 sendDoc' file (User uid) = do
     call "sendDocument" [ partBS "chat_id" (C.pack $ show uid)
-                         , partFileSource "document" file ]
+                        , partFileSource "document" file ]
