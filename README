@@ -1,3 +1,3 @@
 # TelegramBot
 
-A DSL for writting Bots for telegram (src/Web/Commands for examples)
+A DSL for writting Bots for telegram (src/Web/Bot/Commands for examples)
