@@ -33,7 +33,6 @@ main = do
             addCmd youtube
             addCmd bombz
 
-            server
             runAsync $ handler "first"
             runAsync $ handler "second"
 
