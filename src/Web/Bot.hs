@@ -190,15 +190,15 @@ handler n = do
 
         liftIO $ modifyMVar_ mUser $ \conts -> do
             case conts of
-                []     -> return []
-                (_:xs) -> return xs
+                []   -> return []
+                _:xs -> return xs
 
         liftIO $ putMVar mAll allConts
 
 call :: String -> [Part] -> Bot ()
 call endpoint payload = do
-    m     <- getManager
-    url <- prepReq endpoint
+    m    <- getManager
+    url  <- prepReq endpoint
     req' <- parseUrl url
 
     req  <- formDataBody payload req'
