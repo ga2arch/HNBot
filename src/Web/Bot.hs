@@ -33,6 +33,7 @@ import Control.Monad.State
 import Control.Monad.Trans.Class
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
+import Data.ByteString.UTF8 (fromString)
 import Data.Maybe (fromJust)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
@@ -224,7 +225,7 @@ send text = do
 send' :: String -> User -> Bot ()
 send' text (User uid) = do
     call "sendMessage" [ partBS "chat_id" (C.pack $ show uid)
-                       , partBS "text"    (C.pack text)
+                       , partBS "text"    (fromString text)
                        , partBS "disable_web_page_preview" "true"]
 
 sendDoc :: FilePath -> Parser

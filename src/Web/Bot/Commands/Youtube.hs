@@ -11,11 +11,11 @@ import Control.Exception
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Data.String.Utils (replace, endswith)
 import Network.HTTP.Base (urlEncode)
 import System.Process
 import System.Directory
 import System.Random (randomRIO)
+import System.FilePath.Posix
 
 import Web.Bot
 import Web.HackerNews
@@ -55,9 +55,7 @@ getYUrlFilename url =
     liftIO $ try $ do
         t <- fmap init $ readProcess "youtube-dl"
             ["-x", "--get-filename", url] []
-        return $ if endswith ".webm" t
-            then replace ".webm" ".mp3" t
-            else replace ".m4a"  ".mp3" t
+        return $ replaceExtension t ".mp3"
 
 bombz = do
     P.string "/bombz"
