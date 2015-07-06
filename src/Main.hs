@@ -38,5 +38,4 @@ main = do
 
             ancor cache
 
-    --forever $ threadDelay maxBound
     return ()

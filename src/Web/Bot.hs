@@ -226,6 +226,27 @@ handler n = do
 
         liftIO $ putMVar mAll allConts
 
+call :: String -> [Part] -> Bot ()
+call endpoint payload = do
+    m     <- getManager
+    url <- prepReq endpoint
+    req' <- parseUrl url
+
+    req  <- formDataBody payload req'
+    r <- liftIO $ try $ httpLbs req m
+    case r of
+        Left (ex :: SomeException) -> liftIO $ print ex
+        Right _  -> return ()
+
+  where
+    prepReq endpoint = do
+      token <- getToken
+
+      let baseUrl = "https://api.telegram.org/bot"
+          url = mconcat [baseUrl, token, "/", endpoint]
+
+      return url
+
 send :: String -> Parser
 send text = do
     u <- P.getState
@@ -233,20 +254,9 @@ send text = do
 
 send' :: String -> User -> Bot ()
 send' text u@(User uid) = do
-    m     <- getManager
-    token <- getToken
-
-    let baseUrl = "https://api.telegram.org/bot"
-        payload = urlEncodeVars [("chat_id", (show uid))
-                                ,("text", text)
-                                ,("disable_web_page_preview", "true")]
-        url = mconcat [baseUrl, token, "/sendMessage?", payload]
-
-    req <- parseUrl url
-    r <- liftIO $ try $ httpLbs req m
-    case r of
-        Left (ex :: SomeException) -> liftIO $ print ex
-        Right _  -> return ()
+    call "sendMessage" [ partBS "chat_id" (C.pack $ show uid)
+                       , partBS "text" (C.pack text)
+                       , partBS "disable_web_page_preview" "true"]
 
 sendDoc :: FilePath -> Parser
 sendDoc file = do
@@ -255,16 +265,5 @@ sendDoc file = do
 
 sendDoc' :: FilePath -> User -> Bot ()
 sendDoc' file (User uid) = do
-    m     <- getManager
-    token <- getToken
-
-    let baseUrl = "https://api.telegram.org/bot"
-        url = mconcat [baseUrl, token, "/sendDocument"]
-
-    req' <- parseUrl url
-    req  <- formDataBody [partBS "chat_id" (C.pack $ show uid)
-                          ,partFileSource "document" file] req'
-    r <- liftIO $ try $ httpLbs req m
-    case r of
-        Left (ex :: SomeException) -> liftIO $ print ex
-        Right _  -> return ()
+    call "sendDocument" [ partBS "chat_id" (C.pack $ show uid)
+                         , partFileSource "document" file ]
