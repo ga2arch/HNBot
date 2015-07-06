@@ -1,7 +1,31 @@
 {-# LANGUAGE OverloadedStrings, DeriveGeneric, ScopedTypeVariables,
              FlexibleContexts, GeneralizedNewtypeDeriving,
              RankNTypes, ExistentialQuantification #-}
-module Bot where
+module Web.Bot
+        ( runBot
+        , runAsync
+        , getPort
+        , getToken
+        , getManager
+        , getDbConn
+        , getQueue
+        , getCommands
+        , getUsers
+        , addCmd
+        , addCont
+
+        , server
+        , send
+        , send'
+        , sendDoc
+        , next
+        , handler
+        , User (..)
+        , Message (..)
+        , BotConfig (..)
+        , Parser
+        , Bot
+        )where
 
 import Control.Concurrent.MVar
 import Control.Concurrent.Chan
@@ -30,51 +54,7 @@ import qualified Control.Concurrent.Lock as L
 import qualified System.Posix as SP
 import qualified Data.Text.Lazy as T
 
-data User = User {
-    id :: Int
-} deriving (Show, Generic, Ord, Eq)
-
-instance FromJSON User
-instance ToJSON   User
-
-data Message = Message {
-    message_id :: Int
-,   from :: User
-,   chat :: User
-,   text :: Maybe String
-} deriving (Show, Generic)
-
-instance FromJSON Message
-instance ToJSON   Message
-
-data Update = Update {
-    update_id :: Int
-,   message :: Maybe Message
-} deriving (Show, Generic)
-
-instance FromJSON Update
-instance ToJSON   Update
-
-newtype Bot a = B { unBot :: ReaderT BotConfig (StateT BotState IO) a }
-    deriving (Functor, Applicative, Monad, MonadReader BotConfig,
-              MonadState BotState, MonadIO, MonadCatch, MonadThrow, MonadMask)
-
-data BotConfig = BotConfig {
-    botPort    :: Int
-,   botToken   :: String
-,   botManager :: Manager
-,   botDbConn  :: R.Connection
-}
-
-data Cmd = Cmd {
-    cmdParser :: P.ParsecT String User Bot ()
-}
-
-data BotState = BotState {
-    botCommands    :: [Cmd]
-,   botQueue       :: Chan Message
-,   botConts       :: MVar (M.Map User (L.Lock, MVar [P.ParsecT String User Bot ()]))
-}
+import Web.Bot.Types
 
 runBot :: BotConfig -> Bot b -> IO b
 runBot config f = do
@@ -125,11 +105,13 @@ getUsers = do
     toInt :: C.ByteString -> Int
     toInt = read . C.unpack
 
+addCmd :: Parser -> Bot ()
 addCmd cmd = do
     s <- get
     let cmds = botCommands s
     put $ s { botCommands = Cmd cmd:cmds }
 
+next :: Parser -> Parser
 next parser = do
     u <- P.getState
     lift $ addCont u parser
@@ -200,7 +182,7 @@ handler n = do
     forever $ do
         Message { chat = user,
                   text = Just text } <- liftIO $ readChan queue
-                  
+
         liftIO $ print $ n ++ " : " ++ text
 
         mAll <- getConts
@@ -219,8 +201,7 @@ handler n = do
     handleText :: String -> User -> Bot ()
     handleText text user = do
         cmds <- getCommands
-        let parsers = map cmdParser cmds
-        let parser  = P.choice $ map P.try parsers
+        let parser  = P.choice $ map (P.try . cmdParser) cmds
 
         P.runParserT parser user "" text
         return ()
@@ -245,6 +226,7 @@ handler n = do
 
         liftIO $ putMVar mAll allConts
 
+send :: String -> Parser
 send text = do
     u <- P.getState
     lift $ send' text u
@@ -255,10 +237,10 @@ send' text u@(User uid) = do
     token <- getToken
 
     let baseUrl = "https://api.telegram.org/bot"
-    let payload = urlEncodeVars [("chat_id", (show uid)),
-                                ("text", text),
-                                ("disable_web_page_preview", "true")]
-    let url = mconcat [baseUrl, token, "/sendMessage?", payload]
+        payload = urlEncodeVars [("chat_id", (show uid))
+                                ,("text", text)
+                                ,("disable_web_page_preview", "true")]
+        url = mconcat [baseUrl, token, "/sendMessage?", payload]
 
     req <- parseUrl url
     r <- liftIO $ try $ httpLbs req m
@@ -266,11 +248,12 @@ send' text u@(User uid) = do
         Left (ex :: SomeException) -> liftIO $ print ex
         Right _  -> return ()
 
+sendDoc :: FilePath -> Parser
 sendDoc file = do
     u <- P.getState
     lift $ sendDoc' file u
 
-sendDoc' :: String -> User -> Bot ()
+sendDoc' :: FilePath -> User -> Bot ()
 sendDoc' file (User uid) = do
     m     <- getManager
     token <- getToken
