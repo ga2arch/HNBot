@@ -10,15 +10,8 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
 import Data.List
 import Data.Time.Clock (getCurrentTime)
-import Data.String.Utils (replace, endswith)
 import Data.Maybe
 import Database.Redis (connect, defaultConnectInfo)
-import Network.HTTP.Base (urlEncode)
-import Network.HTTP.Client
-import Network.HTTP.Client.TLS
-import System.Process
-import System.Directory
-import System.Random (randomRIO)
 
 import Web.Bot
 import Web.HackerNews

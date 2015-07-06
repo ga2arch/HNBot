@@ -17,7 +17,9 @@ cabal-version:       >=1.10
 
 executable hnbot
   main-is:             Main.hs
-  other-modules:       Bot, HackerNews
+  other-modules:       Web.Bot, Web.Bot.Types, Web.Bot.Commands
+                       Web.HackerNews, Web.HackerNews.Client,
+                       Web.HackerNews.Types
   -- other-extensions:
   build-depends:       base >=4.8 && <4.9, http-client,
                        http-client-tls, aeson, bytestring,
