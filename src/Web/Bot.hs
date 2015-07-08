@@ -91,13 +91,11 @@ addCont :: User -> P.ParsecT String User Bot () -> Bot ()
 addCont user parser = do
     mAll <- getConts
 
-    liftIO $ modifyMVar_ mAll $ \allConts -> do
+    liftIO $ withMVar mAll $ \allConts -> do
         let (lock, mUser) = allConts M.! user
 
         modifyMVar_ mUser $ \userConts ->
             return $ userConts ++ [parser]
-
-        return $ M.insert user (lock, mUser) allConts
 
 server :: Bot ()
 server = do
