@@ -112,12 +112,9 @@ ancor cache db = do
     process newTop oldTop alreadySent (user, threshold) = do
         let tOldTop = take threshold oldTop
             tNewTop = take threshold newTop
+            sent    = M.findWithDefault [] user alreadySent
+            diff    = (tNewTop \\ tOldTop) \\ sent
 
-        let sent = if user `M.member` alreadySent
-            then alreadySent M.! user
-            else []
-
-        let diff = (tNewTop \\ tOldTop) \\ sent
         liftIO $ putStrLn $ show user ++ " " ++ show diff
         sendStories' cache diff user
         return $ M.insert user (sent ++ diff) alreadySent
@@ -142,9 +139,7 @@ sendStories cache ids = do
 sendStories' cache ids u = do
     m <- getManager
 
-    mapM_ (\i -> do
-        s <- getStory' m cache i
-        sendStory s u) ids
+    forM_ ids $ \i -> (flip sendStory) u =<< (getStory' m cache i)
   where
       sendStory (Just (Story sid title url)) u = do
           let msg = title ++ "\n\n" ++ url ++ "\n\n"

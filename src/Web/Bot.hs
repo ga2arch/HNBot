@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, FlexibleContexts,
+             FlexibleInstances #-}
 
 module Web.Bot
         ( runBot
@@ -222,8 +223,16 @@ send text = do
     u <- P.getState
     lift $ send' text u
 
+
+--instance MonadBot Bot
+
+-- instance (MonadBot m) => MonadBot (P.ParsecT s User m) where
+--     send text = do
+--         u <- P.getState
+--         lift $ send' text u
+
 send' :: String -> User -> Bot ()
-send' text (User uid) = do
+send' text (User uid) =
     call "sendMessage" [ partBS "chat_id" (C.pack $ show uid)
                        , partBS "text"    (fromString text)
                        , partBS "disable_web_page_preview" "true"]

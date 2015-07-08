@@ -41,6 +41,9 @@ data Update = Update {
 instance FromJSON Update
 instance ToJSON   Update
 
+-- class (Monad m) => MonadBot m where
+--     send  :: String -> P.ParsecT s User m ()
+
 newtype Bot a = B { unBot :: ReaderT BotConfig (StateT BotState IO) a }
     deriving (Functor, Applicative, Monad, MonadReader BotConfig,
               MonadState BotState, MonadIO, MonadCatch, MonadThrow, MonadMask)
