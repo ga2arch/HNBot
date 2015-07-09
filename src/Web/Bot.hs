@@ -92,7 +92,7 @@ addCont user parser = do
     mAll <- getConts
 
     liftIO $ withMVar mAll $ \allConts -> do
-        let (lock, mUser) = allConts M.! user
+        let (_, mUser) = allConts M.! user
 
         modifyMVar_ mUser $ \userConts ->
             return $ userConts ++ [parser]
@@ -184,16 +184,13 @@ handler n = do
 
     delCont user = do
         mAll <- getConts
-        allConts <- liftIO $ takeMVar mAll
+        liftIO $ withMVar mAll $ \allConts -> do
+            let (_, mUser) = allConts M.! user
 
-        let (_, mUser) = allConts M.! user
-
-        liftIO $ modifyMVar_ mUser $ \conts -> do
-            case conts of
-                []   -> return []
-                _:xs -> return xs
-
-        liftIO $ putMVar mAll allConts
+            modifyMVar_ mUser $ \conts -> do
+                case conts of
+                    []   -> return []
+                    _:xs -> return xs
 
 call :: String -> [Part] -> Bot ()
 call endpoint payload = do
@@ -220,14 +217,6 @@ send :: String -> Parser
 send text = do
     u <- P.getState
     lift $ send' text u
-
-
---instance MonadBot Bot
-
--- instance (MonadBot m) => MonadBot (P.ParsecT s User m) where
---     send text = do
---         u <- P.getState
---         lift $ send' text u
 
 send' :: String -> User -> Bot ()
 send' text (User uid) =
