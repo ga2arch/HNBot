@@ -33,6 +33,7 @@ main = do
             addCmd $ threshold db
             addCmd youtube
             addCmd bombz
+            addCmd reminder
 
             runAsync $ handler "first"
             runAsync $ handler "second"
