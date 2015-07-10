@@ -213,6 +213,10 @@ call endpoint payload = do
 
       return url
 
+setWebhook :: String -> Bot ()
+setWebhook host =
+    call "setWebhook" [ partBS "url" (C.pack $ show host)]
+
 send :: String -> Parser
 send text = do
     u <- P.getState
