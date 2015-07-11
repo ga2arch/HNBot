@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables, FlexibleContexts,
-             FlexibleInstances #-}
+             FlexibleInstances, ViewPatterns #-}
 
 module Web.Bot
         ( runBot
@@ -35,7 +35,7 @@ import Control.Monad.Trans.Class
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
 import Data.ByteString.UTF8 (fromString)
-import Data.Maybe (fromJust)
+import Data.Maybe hiding (listToMaybe)
 import Network.HTTP.Client
 import Network.HTTP.Client.TLS
 import Network.HTTP.Client.MultipartFormData
@@ -97,6 +97,13 @@ addCont user parser = do
         modifyMVar_ mUser $ \userConts ->
             return $ userConts ++ [parser]
 
+whenJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
+whenJust mg f = maybe (return ()) f mg
+
+listToMaybe :: [a] -> Maybe [a]
+listToMaybe [] = Nothing
+listToMaybe xs = Just xs
+
 server :: Bot ()
 server = do
     port  <- getPort
@@ -110,12 +117,11 @@ server = do
                 print update
 
                 let (Update _ message) = update
-                case message of
-                    Just m@Message { chat = chat,
-                                     text = Just _ } -> do
+                whenJust message $
+                    \m@Message { chat = chat,
+                                 text = Just _ } -> do
                         addUser chat conts
                         writeChan queue m
-                    _ -> return ()
             Sc.html "ok"
 
         Sc.get "/static/:name" $ do
@@ -187,10 +193,8 @@ handler n = do
         liftIO $ withMVar mAll $ \allConts -> do
             let (_, mUser) = allConts M.! user
 
-            modifyMVar_ mUser $ \conts -> do
-                case conts of
-                    []   -> return []
-                    _:xs -> return xs
+            modifyMVar_ mUser $ \(listToMaybe -> conts) ->
+                maybe (return []) (\(_:xs) -> return xs) conts
 
 call :: String -> [Part] -> Bot ()
 call endpoint payload = do
