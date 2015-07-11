@@ -22,7 +22,7 @@ import Web.HackerNews
 
 import qualified Text.Parsec as P
 
-downloadAndSend name url = do
+download name url = do
     (o, p) <- liftIO $ do
         o <- getCurrentDirectory
         p <- makeAbsolute "static/"
@@ -39,6 +39,7 @@ downloadAndSend name url = do
         Left (e :: SomeException) -> do
             liftIO $ print e
             send "There was an error"
+            return Nothing
 
         Right _ -> do
             path <- liftIO $ do
@@ -49,7 +50,7 @@ downloadAndSend name url = do
                 makeAbsolute $ "static/" ++ name
 
             sendDoc path
-            send $ "http://dogetu.be:8080/static/" ++ urlEncode name
+            return $ Just $ "http://dogetu.be:8080/static/" ++ urlEncode name
 
 getYUrlFilename url =
     liftIO $ try $ do
@@ -68,7 +69,11 @@ bombz = do
     case t of
         Right name -> do
             send $ "Fetching " ++ name
-            downloadAndSend name url
+            u <- download name url
+            case u of
+                Just surl -> send surl
+                Nothing   -> send "There was an error"
+
         Left (e :: SomeException) -> send "There was an error"
 
 youtube = do
@@ -85,7 +90,10 @@ youtube = do
     case n of
         Right name -> do
             send $ "Fetching " ++ name
-            downloadAndSend name url
+            u <- download name url
+            case u of
+                Just surl -> send surl
+                Nothing   -> send "There was an error"
 
         Left (e :: SomeException) -> do
             liftIO $ print e
