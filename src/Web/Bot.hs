@@ -53,8 +53,8 @@ import Web.Bot.Types
 
 runBot :: BotConfig -> Bot b -> IO b
 runBot config f = do
-    queue <- newChan
-    conts <- newMVar M.empty
+    queue <- liftIO newChan
+    conts <- liftIO $ newMVar M.empty
 
     let state = BotState [] queue conts
     evalStateT (runReaderT (unBot $ server >> f) config) state
