@@ -138,7 +138,9 @@ sendStories cache ids = do
 sendStories' cache ids u = do
     m <- getManager
 
-    forM_ ids $ \i -> (flip sendStory) u =<< (getStory' m cache i)
+    forM_ ids $ \i -> do
+        story <- getStory' m cache i
+        sendStory story u
   where
       sendStory (Just (Story sid title url)) u = do
           let msg = title ++ "\n\n" ++ url ++ "\n\n"
