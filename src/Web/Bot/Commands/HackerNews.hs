@@ -121,16 +121,15 @@ ancor cache db = do
 
 getStory' m cache sid =
     liftIO $ modifyMVar cache $ \c@(Cache {..}) -> do
-        if sid `M.member` cacheStories
-            then return (c, Just $ cacheStories M.! sid)
-            else do
-                story <- getStory m sid
-                case story of
-                    Just s -> do
-                        let nStories = M.insert sid s cacheStories
-                        return (c { cacheStories = nStories }, story)
-                    Nothing -> return (c, Nothing)
-
+        maybe (fetch c m sid)
+              (return . (,) c . Just) $ M.lookup sid cacheStories
+  where
+    fetch c m sid = do
+        story <- getStory m sid
+        case story of
+            Just s -> let nStories = M.insert sid s (cacheStories c)
+                      in  return (c { cacheStories = nStories }, story)
+            Nothing -> return (c, Nothing)
 
 sendStories cache ids = do
     u <- P.getState
