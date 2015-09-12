@@ -80,7 +80,7 @@ youtube = do
     P.manyTill P.anyToken (P.try $ P.string "youtu")
     (P.try $ P.string ".be/") P.<|> (P.try $ P.string "be.com/watch?v=")
 
-    rest  <- P.many1 P.anyToken
+    rest  <- P.many1 P.alphaNum
 
     let url = "https://www.youtube.com/watch?v=" ++ rest
     liftIO $ print url

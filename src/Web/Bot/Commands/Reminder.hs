@@ -25,7 +25,7 @@ reminder = do
         send "What to remind: "
 
         next $ do
-            text <- P.many1 P.letter
+            text <- P.many1 P.anyToken
             u <- P.getState
 
             lift . runAsync $ do
