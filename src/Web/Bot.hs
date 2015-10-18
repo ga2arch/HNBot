@@ -45,6 +45,8 @@ import qualified Text.Parsec as P
 import qualified Data.Map as M
 import qualified Data.ByteString.Char8 as C
 import qualified Web.Scotty as Sc
+import qualified Web.Scotty.TLS as ScTLS
+
 import qualified Control.Concurrent.Lock as L
 import qualified System.Posix as SP
 import qualified Data.Text.Lazy as T
@@ -110,7 +112,8 @@ server = do
     queue <- getQueue
     conts <- getConts
 
-    liftIO . async . Sc.scotty port $ do
+    let startServer = ScTLS.scottyTLS port "cert/server.key" "cert/server.crt"
+    liftIO . async . startServer $ do
         Sc.post "/" $ do
             update <- Sc.jsonData :: Sc.ActionM Update
             liftIO $ do
@@ -133,7 +136,7 @@ server = do
 
     return ()
   where
-    addUser user conts = modifyMVar_ conts $ \m -> do
+    addUser user conts = modifyMVar_ conts $ \m ->
         if user `M.member` m
             then return m
             else do

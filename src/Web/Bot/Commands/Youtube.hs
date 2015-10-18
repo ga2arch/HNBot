@@ -50,7 +50,7 @@ download name url = do
                 makeAbsolute $ "static/" ++ name
 
             sendDoc path
-            return $ Just $ "http://dogetu.be:8080/static/" ++ urlEncode name
+            return $ Just $ "https://dogetu.be:8443/static/" ++ urlEncode name
 
 getYUrlFilename url =
     liftIO $ try $ do
@@ -80,7 +80,7 @@ youtube = do
     P.manyTill P.anyToken (P.try $ P.string "youtu")
     (P.try $ P.string ".be/") P.<|> (P.try $ P.string "be.com/watch?v=")
 
-    rest  <- P.many1 P.alphaNum
+    rest  <- P.many1 P.anyToken
 
     let url = "https://www.youtube.com/watch?v=" ++ rest
     liftIO $ print url
