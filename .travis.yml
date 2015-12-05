@@ -48,8 +48,7 @@ before_deploy:
 deploy:
   skip_cleanup: true
   provider: releases
-  api_key:
-      secure: "HAI8NYyY1BUESKqV22m5jWEiTbD5UDVrisbhZv1vv0ILPyZdDkS759nhWtIc5/OuYOpa7eRDKC+p7sDNZDSjIrOGpFRfxr+0cvfcklCnmuAYwmsaE2YuNQ2dB0+yvZMv5Niv6n1XKf3t6bWiq8FomgUNuinT7EKmZ3KW2ah6sIo4zwb/m+i0tx2pkQnKfUItRLEqw/yBWllIyIzEafcKsPHNiZdB/gRe5EmYXK8UqpWaCByoQWeKR9MHG3+wWuZzkQUERBDVEPwwUB8HKTpSqWr+kcSnS+fyOBhVCWEmAag+p9CXvA3pCIsW78wKgC84yj3/ltd7unzrif3De8NUt/gRWm0qRXualjfQnikFW5gAgVo0X2PzaaKnH/xt417t/5w1jw2p5dtOOOkEyX5LDuiezQFTukeKQe5jnyPX36do9scf+f0+h5vwvYu2cc4scokGupDxN33usScOqoYYHGchounOJTKinPJIiHtCAM9kNuLXVeFIPqXPAHJ5AJw5DGPnd+5TKtXsoskdHtjqy0YVESl5fKShC+oi39v3phqpZOllbph/T2pw9HcawaXVIT0a/sBRS33v+FSgawW3DQ+zmeLut8pGiQb2Rho5JLY5rrzwNps5c4CrhUP+GiFzgb5bWuoELRB9179YxOvE1k1QuF3p5uE+PSFKHXMqE6Q="
+  api_key: $GITHUB
   file:
     - "/home/travis/.local/bin/ga2bot"
   on:
