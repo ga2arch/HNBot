@@ -1,5 +1,8 @@
-{-# LANGUAGE OverloadedStrings, ScopedTypeVariables, FlexibleContexts,
-             FlexibleInstances, ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 module Web.Bot
         ( runBot
@@ -25,33 +28,33 @@ module Web.Bot
         , Bot
         )where
 
-import Control.Concurrent.MVar
-import Control.Concurrent.Chan
-import Control.Concurrent.Async
-import Control.Monad.Catch
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Trans.Class
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson
-import Data.ByteString.UTF8 (fromString)
-import Data.Maybe hiding (listToMaybe)
-import Network.HTTP.Client
-import Network.HTTP.Client.TLS
-import Network.HTTP.Client.MultipartFormData
-import System.Directory
+import           Control.Concurrent.Async
+import           Control.Concurrent.Chan
+import           Control.Concurrent.MVar
+import           Control.Monad.Catch
+import           Control.Monad.IO.Class                (MonadIO, liftIO)
+import           Control.Monad.Reader
+import           Control.Monad.State
+import           Control.Monad.Trans.Class
+import           Data.Aeson
+import           Data.ByteString.UTF8                  (fromString)
+import           Data.Maybe                            hiding (listToMaybe)
+import           Network.HTTP.Client
+import           Network.HTTP.Client.MultipartFormData
+import           Network.HTTP.Client.TLS
+import           System.Directory
 
-import qualified Text.Parsec as P
-import qualified Data.Map as M
-import qualified Data.ByteString.Char8 as C
-import qualified Web.Scotty as Sc
-import qualified Web.Scotty.TLS as ScTLS
+import qualified Data.ByteString.Char8                 as C
+import qualified Data.Map                              as M
+import qualified Text.Parsec                           as P
+import qualified Web.Scotty                            as Sc
+import qualified Web.Scotty.TLS                        as ScTLS
 
-import qualified Control.Concurrent.Lock as L
-import qualified System.Posix as SP
-import qualified Data.Text.Lazy as T
+import qualified Control.Concurrent.Lock               as L
+import qualified Data.Text.Lazy                        as T
+import qualified System.Posix                          as SP
 
-import Web.Bot.Types
+import           Web.Bot.Types
 
 runBot :: BotConfig -> Bot b -> IO b
 runBot config f = do

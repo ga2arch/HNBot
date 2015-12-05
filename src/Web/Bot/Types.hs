@@ -1,20 +1,22 @@
-{-# LANGUAGE DeriveGeneric, FlexibleContexts, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Web.Bot.Types where
 
-import Control.Concurrent.MVar
-import Control.Concurrent.Chan
-import Control.Monad.Catch
-import Control.Monad.Reader
-import Control.Monad.State
-import Control.Monad.Trans.Class
-import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.Aeson
-import GHC.Generics
-import Network.HTTP.Client
+import           Control.Concurrent.Chan
+import           Control.Concurrent.MVar
+import           Control.Monad.Catch
+import           Control.Monad.IO.Class    (MonadIO, liftIO)
+import           Control.Monad.Reader
+import           Control.Monad.State
+import           Control.Monad.Trans.Class
+import           Data.Aeson
+import           GHC.Generics
+import           Network.HTTP.Client
 
-import qualified Control.Concurrent.Lock as L
-import qualified Data.Map    as M
-import qualified Text.Parsec as P
+import qualified Control.Concurrent.Lock   as L
+import qualified Data.Map                  as M
+import qualified Text.Parsec               as P
 
 data User = User {
     id :: Int
@@ -25,9 +27,9 @@ instance ToJSON   User
 
 data Message = Message {
     message_id :: Int
-,   from :: User
-,   chat :: User
-,   text :: Maybe String
+,   from       :: User
+,   chat       :: User
+,   text       :: Maybe String
 } deriving (Show, Generic)
 
 instance FromJSON Message
@@ -35,7 +37,7 @@ instance ToJSON   Message
 
 data Update = Update {
     update_id :: Int
-,   message :: Maybe Message
+,   message   :: Maybe Message
 } deriving (Show, Generic)
 
 instance FromJSON Update
@@ -58,7 +60,7 @@ data Cmd = Cmd {
 }
 
 data BotState = BotState {
-    botCommands    :: [Cmd]
-,   botQueue       :: Chan Message
-,   botConts       :: MVar (M.Map User (L.Lock, MVar [Parser]))
+    botCommands :: [Cmd]
+,   botQueue    :: Chan Message
+,   botConts    :: MVar (M.Map User (L.Lock, MVar [Parser]))
 }

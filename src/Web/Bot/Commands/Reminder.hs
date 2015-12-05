@@ -1,17 +1,19 @@
-{-# LANGUAGE OverloadedStrings, RecordWildCards, FlexibleContexts,
-             ScopedTypeVariables #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Web.Bot.Commands.Reminder
         ( reminder
         )where
 
-import Control.Applicative
-import Control.Monad.Trans.Class
-import Control.Monad.IO.Class
-import Control.Concurrent
-import Control.Concurrent.Async
-import Web.Bot
-import qualified Text.Parsec as P
+import           Control.Applicative
+import           Control.Concurrent
+import           Control.Concurrent.Async
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Class
+import qualified Text.Parsec               as P
+import           Web.Bot
 
 reminder = do
     P.string "/remind"
@@ -26,14 +28,16 @@ reminder = do
 
         next $ do
             text <- P.many1 P.anyToken
-            u <- P.getState
+            u    <- P.getState
 
             lift . runAsync $ do
-                liftIO $ threadDelay (converTime time unit)
+                liftIO $ threadDelay (microseconds time unit)
                 send' text u
 
             send "✅"
   where
-    converTime time 's' = time * 10^6
-    converTime time 'm' = converTime (time * 10^6) 's'
-    converTime time 'h' = converTime (time * 10^6) 'm'
+      microseconds time unit = time *
+          case unit of
+              's' -> 1  * 10^6
+              'm' -> 6  * 10^7
+              'h' -> 36 * 10^8

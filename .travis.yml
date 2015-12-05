@@ -1,0 +1,59 @@
+# Use new container infrastructure to enable caching
+sudo: required
+
+# Choose a lightweight base image; we provide our own build tools.
+language: c
+
+# GHC depends on GMP. You can add other dependencies here as well.
+addons:
+  apt:
+    packages:
+    - libgmp-dev
+    - upx-ucl
+
+services:
+  - docker
+
+# The different configurations we want to test. You could also do things like
+# change flags or use --stack-yaml to point to a different file.
+env:
+- ARGS="--resolver nightly"
+
+before_install:
+# Download and unpack the stack executable
+- mkdir -p ~/.local/bin
+- export PATH=$PATH:$HOME/.local/bin
+- travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+
+# This line does all of the work: installs GHC if necessary, build the library,
+# executables, and test suites, and runs the test suites. --no-terminal works
+# around some quirks in Travis's terminal implementation.
+script: stack $ARGS install --no-terminal --install-ghc
+
+# Caching so the next build will be fast too.
+cache:
+  directories:
+  - $HOME/.stack
+
+before_deploy:
+- upx ~/.local/bin/ga2bot
+- docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+- docker pull ga2arch/ga2bot:base
+- stack image container
+- docker tag -f ga2arch/ga2bot ga2arch/ga2bot:$TRAVIS_TAG
+- docker tag -f ga2arch/ga2bot ga2arch/ga2bot:latest
+- docker push ga2arch/ga2bot
+- rvm 1.9.3 do gem install mime-types -v 2.6.2
+
+deploy:
+  skip_cleanup: true
+  provider: releases
+  api_key:
+      secure: "HAI8NYyY1BUESKqV22m5jWEiTbD5UDVrisbhZv1vv0ILPyZdDkS759nhWtIc5/OuYOpa7eRDKC+p7sDNZDSjIrOGpFRfxr+0cvfcklCnmuAYwmsaE2YuNQ2dB0+yvZMv5Niv6n1XKf3t6bWiq8FomgUNuinT7EKmZ3KW2ah6sIo4zwb/m+i0tx2pkQnKfUItRLEqw/yBWllIyIzEafcKsPHNiZdB/gRe5EmYXK8UqpWaCByoQWeKR9MHG3+wWuZzkQUERBDVEPwwUB8HKTpSqWr+kcSnS+fyOBhVCWEmAag+p9CXvA3pCIsW78wKgC84yj3/ltd7unzrif3De8NUt/gRWm0qRXualjfQnikFW5gAgVo0X2PzaaKnH/xt417t/5w1jw2p5dtOOOkEyX5LDuiezQFTukeKQe5jnyPX36do9scf+f0+h5vwvYu2cc4scokGupDxN33usScOqoYYHGchounOJTKinPJIiHtCAM9kNuLXVeFIPqXPAHJ5AJw5DGPnd+5TKtXsoskdHtjqy0YVESl5fKShC+oi39v3phqpZOllbph/T2pw9HcawaXVIT0a/sBRS33v+FSgawW3DQ+zmeLut8pGiQb2Rho5JLY5rrzwNps5c4CrhUP+GiFzgb5bWuoELRB9179YxOvE1k1QuF3p5uE+PSFKHXMqE6Q="
+  file:
+    - "/home/travis/.local/bin/ga2bot"
+  on:
+    tags: true
+
+notifications:
+  email: false
