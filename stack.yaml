@@ -6,7 +6,7 @@ resolver: nightly-2015-12-05
 
 image:
   container:
-    base: "ga2arch/ga2bot:base"
+    base: "ga2arch/base:latest"
     name: "ga2arch/ga2bot"
     entrypoints:
      - ga2bot

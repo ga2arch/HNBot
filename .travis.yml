@@ -38,7 +38,7 @@ cache:
 before_deploy:
 - upx ~/.local/bin/ga2bot
 - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
-- docker pull ga2arch/ga2bot:base
+- docker pull ga2arch/base
 - stack image container
 - docker tag -f ga2arch/ga2bot ga2arch/ga2bot:$TRAVIS_TAG
 - docker tag -f ga2arch/ga2bot ga2arch/ga2bot:latest
